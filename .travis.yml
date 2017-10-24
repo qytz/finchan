@@ -1,0 +1,28 @@
+# Config file for automatic testing at travis-ci.org
+# This file will be regenerated if you run travis_pypi_setup.py
+
+sudo: false
+language: python
+install:
+  - pip install -r requirements.txt
+  - pip install .
+script:
+  - pytest
+matrix:
+  include:
+    - python: 3.6
+    - python: 3.7
+      dist: xenial
+      sudo: true
+
+# After you create the Github repo and add it to Travis, run the
+# travis_pypi_setup.py script to finish PyPI deployment setup
+# deploy:
+#   provider: pypi
+#   distributions: sdist bdist_wheel
+#   user: qytz-py3
+#   password:
+#     secure: PLEASE_REPLACE_ME
+#   on:
+#     tags: true
+#     repo: qytz/finchan

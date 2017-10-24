@@ -1,0 +1,81 @@
+%YAML 1.2
+---
+
+version: 1
+# run mode: support live/backtrack
+# run_mode: backtrack
+run_mode: live
+
+work_dir: ~/.finchan
+
+# live track: paramerter for live dispatcher, will pass to LiveDispatcher
+live_track:
+    stop_check_interval: 5
+
+# backtrack: paramerter for backtrack dispatcher, will pass to BackTrackDispatcher
+backtrack:
+    # time step in seconds for backtest
+    time_step: 86400    # one day
+    start_dt: 2017-03-04 12:00:00
+    end_dt: 2017-03-05 12:00:00
+    # trace_process_time, if set to true, the event process time is added to now
+    trace_process_time: true
+
+# paramerters for backtrack ext_manage, will pass to ExtManager
+ext_manager:
+    # extensions' path
+    ext_path: ~/
+
+# paramerters for live ext_manage, will pass to ExtManager
+live_track_exts:
+    finchan.exts.timer_source:
+        # time event frequency, unit is second
+        frequency: 1
+    finchan.exts.timer_callback:
+        # process time in second
+        process_time: 1
+
+backtrack_exts:
+    finchan.exts.timer_source:
+    finchan.exts.timer_callback:
+        # process time in second
+        process_time: 3
+
+# logging config, console is not included, support python logging.config.dictConfig
+log_config:
+    version: 1
+    formatters:
+        verbose:
+            class: logging.Formatter
+            format: "%(asctime)s %(name)-15s %(levelname)-8s %(message)s"
+        simple:
+            class: logging.Formatter
+            format: "%(asctime)s %(levelname)s %(message)s"
+    filters:
+        context:
+            "()": "finchan.log.ContextFilter"
+    handlers:
+        # console:
+        #     class: logging.StreamHandler
+        #     level: INFO
+        #     formatter: simple
+        file:
+            class: logging.FileHandler
+            filename: logs/log.log
+            mode: w
+            formatter: verbose
+            filters: [context]
+            level: DEBUG
+        errors:
+            class: logging.FileHandler
+            filename: logs/errors.log
+            mode: w
+            level: ERROR
+            filters: [context]
+            formatter: verbose
+    loggers:
+        finchan:
+            propagate: true
+    root:
+        level: DEBUG
+        handlers: [file, errors]
