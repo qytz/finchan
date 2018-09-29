@@ -21,6 +21,12 @@ import logging
 from finchan.env import env
 from finchan.event import SysEvents
 
+# name of the extension
+ext_name = 'finchan.exts.timer_callback'
+# required extension
+required_exts = ['finchan.exts.timer_source']
+
+logger = logging.getLogger(__name__)
 
 logger = logging.getLogger()
 
@@ -39,7 +45,7 @@ def add_timer(event):
 
 
 def load_finchan_ext(env, process_time=3, *args, **kwargs):
-    env.dispatcher.subscribe(str(SysEvents.SYSTEM_STARTED), add_timer)
+    env.dispatcher.subscribe(SysEvents.SYSTEM_STARTED, add_timer)
 
 def unload_finchan_ext(env):
     scheduler = env.get_ext_obj('finchan.exts.timer_source')

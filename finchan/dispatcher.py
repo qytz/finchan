@@ -29,7 +29,7 @@ from queue import Queue, PriorityQueue, Empty
 from datetime import datetime
 from collections import defaultdict
 
-from finchan.event import Event
+from .event import Event, SysEvents
 from finchan.interface.event_source import AbsEventSource
 
 
@@ -228,6 +228,9 @@ class BaseDispatcher(abc.ABC):
             logger.warning('#Dispatcher No EventSource registered, system will exit directly.')
             return None
 
+        # system initialized
+        self.eq_put(Event(SysEvents.SYSTEM_STARTED))
+
         self.setup()
         last_event = None
         while True:
@@ -248,13 +251,15 @@ class BaseDispatcher(abc.ABC):
             logger.debug('#Dispatcher Start process event: %s', event)
             for call_func in self._event_subscribes[event.name]:
                 call_func(event)
+                if self._will_stop:
+                    break
             last_event = event
             if self.now >= self._end_dt:
                 logger.info('#Dispatcher Run out of time, dispatch finish.')
                 break
-            if self._will_stop:
-                break
 
+        # system is exiting
+        self.eq_put(Event(SysEvents.SYSTEM_EXITING))
         logger.info('#Dispatcher loop exit.')
         self._will_stop = True
         self.cleanup()

@@ -14,7 +14,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Timer event source, interface inspired by `schedule <https://github.com/dbader/schedule>`_"""
+"""Timer event source, interface inspired by `schedule <https://github.com/dbader/schedule>`_
+
+usage::
+
+    def setup()
+        scheduler = env.get_ext_obj('finchan.exts.timer_source')
+        scheduler.run_every(3).to(5).minutes().do(timer_call)
+        scheduler.run_every(1).days.offset('09:31').tag('daily_task').do(timer_call)
+        # runs on every two weeks' friday 09:31
+        scheduler.run_every(2).weeks.offset('friday 09:31').tag('daily_task').do(timer_call)
+        # runs on every month's 09 day 09:31
+        scheduler.run_every(1).months.offset('09 09:31').tag('daily_task').do(timer_call)
+
+
+    def clean()
+        scheduler = env.get_ext_obj('finchan.exts.timer_source')
+        scheduler.cancel_all_jobs()
+
+"""
 import random
 import asyncio
 import logging
@@ -28,8 +46,12 @@ from finchan.utils import get_id_gen
 from finchan.interface.event_source import AbsEventSource
 
 
-logger = logging.getLogger(__name__)
+# name of the extension
 ext_name = 'finchan.exts.timer_source'
+# required extension
+required_exts = []
+
+logger = logging.getLogger(__name__)
 
 
 def event_callback(event):

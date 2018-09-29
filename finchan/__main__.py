@@ -26,7 +26,6 @@ import click
 import uvloop
 
 from .env import env
-from .event import Event, SysEvents
 from .exts import ExtManager
 from .options import parse_yaml_conf
 from .dispatcher import BackTrackDispatcher, LiveDispatcher
@@ -115,9 +114,6 @@ def main(verbose=0, config=None):
     if not ext_dict:
         ext_dict = {}
     env.load_exts(ext_dict)
-
-    # system initialized, we can send event now.
-    dispatcher.eq_put(Event(str(SysEvents.SYSTEM_STARTED)))
     env.run()
 
 

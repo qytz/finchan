@@ -99,17 +99,13 @@ class Event(object):
                                                          self.kwargs)
 
 
-class SysEvents(Enum):
+class SysEvents(object):
     """system defined events
 
     enum of events that finchan system generate/reserved:
 
-        * SYSTEM_STARTED = 'system_started'
+        * SYSTEM_STARTED = 'system_event.system_started'
+        * SYSTEM_EXITING = 'system_event.system_will_exit'
     """
     SYSTEM_STARTED = 'system_event.system_started'
-
-    def __repr__(self):
-        return self.value
-
-    def __str__(self):
-        return self.value
+    SYSTEM_EXITING = 'system_event.system_will_exit'
