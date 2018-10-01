@@ -32,9 +32,10 @@ from .dispatcher import BackTrackDispatcher, LiveDispatcher
 
 
 @click.command()
-@click.option('-v', '--verbose', count=True,
-              help='Count output level, can set multipule times.')
-@click.option('-c', '--config', help='Specify config file.')
+@click.option(
+    "-v", "--verbose", count=True, help="Count output level, can set multipule times."
+)
+@click.option("-c", "--config", help="Specify config file.")
 def main(verbose=0, config=None):
     """Console script for finchan
 
@@ -55,56 +56,52 @@ def main(verbose=0, config=None):
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     env.verbose = verbose
     if not config:
-        conf_path = os.path.expanduser('~/.finchan/config.yml')
+        conf_path = os.path.expanduser("~/.finchan/config.yml")
     else:
         conf_path = config
     try:
         env.options = parse_yaml_conf(conf_path)
     except (Exception, Warning) as e:
-        print('Parse configure file failed, please check: %s' % e)
+        print("Parse configure file failed, please check: %s" % e)
         return
 
-    work_dir = os.path.expanduser(env.options.get('work_dir', '~/.finchan'))
+    work_dir = os.path.expanduser(env.options.get("work_dir", "~/.finchan"))
     os.makedirs(work_dir, exist_ok=True)
-    os.makedirs(os.path.join(work_dir, 'logs'), exist_ok=True)
+    os.makedirs(os.path.join(work_dir, "logs"), exist_ok=True)
     os.chdir(work_dir)
-    log_config = env.options.get('log_config', {})
+    log_config = env.options.get("log_config", {})
     logging.config.dictConfig(log_config)
-    if env.options['run_mode'] == 'backtrack':
-        env.run_mode = 'backtrack'
+    if env.options["run_mode"] == "backtrack":
+        env.run_mode = "backtrack"
     else:
-        env.run_mode = 'live_track'
+        env.run_mode = "live_track"
 
-    if env.verbose > 0:
-        handler = logging.StreamHandler()
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s %(tracktime)s %(levelname)-8s %(message)s"))
-        if verbose == 1:
-            handler.setLevel('ERROR')
-        elif verbose == 2:
-            handler.setLevel('WARNING')
-        elif verbose == 3:
-            handler.setLevel('INFO')
-        else:
-            handler.setLevel('DEBUG')
-        root_logger = logging.getLogger()
-        root_logger.addHandler(handler)
+    root_logger = logging.getLogger()
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(tracktime)s %(levelname)-8s %(message)s")
+    )
+    if verbose > 0:
+        handler.setLevel("DEBUG")
+    else:
+        handler.setLevel("INFO")
+    root_logger.addHandler(handler)
 
-    root_logger.info('Run in %s mode', env.run_mode)
-    if env.run_mode == 'backtrack':
-        backtrack_args = env.options.get('backtrack', None)
+    root_logger.info("Run in %s mode", env.run_mode)
+    if env.run_mode == "backtrack":
+        backtrack_args = env.options.get("backtrack", None)
         if not backtrack_args:
             backtrack_args = {}
         dispatcher = BackTrackDispatcher(**backtrack_args)
-        ext_dict = env.options.get('backtrack_exts', None)
+        ext_dict = env.options.get("backtrack_exts", None)
     else:
-        live_track_args = env.options.get('live_track', None)
+        live_track_args = env.options.get("live_track", None)
         if not live_track_args:
             live_track_args = {}
         dispatcher = LiveDispatcher(**live_track_args)
-        ext_dict = env.options.get('live_track_exts', None)
+        ext_dict = env.options.get("live_track_exts", None)
 
-    extm_args = env.options['ext_manager']
+    extm_args = env.options["ext_manager"]
     if not extm_args:
         extm_args = {}
     ext_manager = ExtManager(**extm_args)
@@ -117,5 +114,5 @@ def main(verbose=0, config=None):
     env.run()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
