@@ -10,6 +10,10 @@ python-dateutil = "*"
 "ruamel.yaml" = "*"
 
 [dev-packages]
+pytest = "*"
+pytest-cov = "*"
+pytest-html = "*"
+pytest-asyncio = "*"
 
 [requires]
 python_version = "3.6"

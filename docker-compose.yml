@@ -1,0 +1,13 @@
+version: "3"
+services:
+    finchan:
+        image: "finchan:dev"
+        build:
+            context: .
+            dockerfile: Dockerfile
+        hostname: finchan
+        stdin_open: true
+        tty: true
+        working_dir: '/finchan'
+        volumes:
+            - ".:/finchan"

@@ -2,10 +2,11 @@
 # -*- coding: utf-8 -*-
 import os
 import sys
-from setuptools import setup
+from setuptools import setup, find_packages
 
 here = os.path.abspath(os.path.dirname(__file__))
 
+print(find_packages(where=here, exclude='tests'))
 # 'setup.py publish' shortcut.
 # if sys.argv[-1] == 'publish':
 #     os.system('python setup.py sdist bdist_wheel')
@@ -27,9 +28,7 @@ setup(
     author=about['__author__'],
     author_email=about['__author_email__'],
     url=about['__url__'],
-    packages=[
-        'finchan',
-    ],
+    packages=find_packages(where=here, exclude=('tests',)),
     package_data={'': ['LICENSE']},
     package_dir={'finchan': 'finchan'},
     include_package_data=True,
@@ -55,6 +54,6 @@ setup(
         'License :: OSI Approved :: Apache Software License',
         'Natural Language :: Chinese (Simplified)',
         'Programming Language :: Python :: 3 :: Only',
-        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.6'
     ],
 )
