@@ -29,3 +29,9 @@ Features
 --------
 
 Do whatever you want with it.
+
+* Event-driven
+* Support live trace and backtrack test
+* Easy extensionable
+* Support Python 3.6+
+* Does not support Python 2.x

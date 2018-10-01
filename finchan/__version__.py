@@ -17,8 +17,8 @@
 __title__ = 'finchan'
 __description__ = 'An event process framework with python'
 __url__ = 'https://github.com/qytz/finchan'
-__version__ = '0.1.1'
-__build__ = 0x000101
+__version__ = '0.1.2'
+__build__ = 0x000102
 __author__ = 'qytz'
 __author_email__ = 'hhhhhf@foxmail.com'
 __license__ = 'Apache 2.0'
