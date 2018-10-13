@@ -8,25 +8,25 @@ run_mode: live
 
 work_dir: ~/.finchan
 
-# live track: paramerter for live dispatcher, will pass to LiveDispatcher
+# live track: parameter for live dispatcher, will pass to LiveDispatcher
 live_track:
     stop_check_interval: 5
 
-# backtrack: paramerter for backtrack dispatcher, will pass to BackTrackDispatcher
+# backtrack: parameter for backtrack dispatcher, will pass to BackTrackDispatcher
 backtrack:
     # time step in seconds for backtest
     time_step: 86400    # one day
     start_dt: 2017-03-04 12:00:00
-    end_dt: 2017-03-05 12:00:00
+    end_dt: 2017-03-07 12:00:00
     # trace_process_time, if set to true, the event process time is added to now
     trace_process_time: true
 
-# paramerters for backtrack ext_manage, will pass to ExtManager
+# parameters for backtrack ext_manage, will pass to ExtManager
 ext_manager:
     # extensions' path
     ext_path: ~/
 
-# paramerters for live ext_manage, will pass to ExtManager
+# parameters for live ext_manage, will pass to ExtManager
 live_track_exts:
     finchan.exts.timer_source:
         # time event frequency, unit is second
@@ -52,8 +52,8 @@ log_config:
             class: logging.Formatter
             format: "%(asctime)s %(levelname)s %(message)s"
     filters:
-        context:
-            "()": "finchan.log.ContextFilter"
+        finchan:
+            "()": "finchan.log.get_finchan_filter"
     handlers:
         # console:
         #     class: logging.StreamHandler
@@ -64,14 +64,14 @@ log_config:
             filename: logs/log.log
             mode: w
             formatter: verbose
-            filters: [context]
+            filters: [finchan]
             level: DEBUG
         errors:
             class: logging.FileHandler
             filename: logs/errors.log
             mode: w
             level: ERROR
-            filters: [context]
+            filters: [finchan]
             formatter: verbose
     loggers:
         finchan:

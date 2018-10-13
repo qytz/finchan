@@ -17,16 +17,18 @@
 """log config"""
 import logging
 
-from .env import env
 
+def get_finchan_filter(env):
+    class ContextFilter(logging.Filter):
+        """
+        This is a filter which injects contextual information into the log.
+        """
 
-class ContextFilter(logging.Filter):
-    """
-    This is a filter which injects contextual information into the log.
-    """
-    def filter(self, record):
-        if env.run_mode == 'backtrack':
-            record.tracktime = env.now
-        else:
-            record.tracktime = ''
-        return True
+        def filter(self, record):
+            if env.run_mode == 'backtrack':
+                record.tracktime = env.now
+            else:
+                record.tracktime = ''
+            return True
+
+    return ContextFilter()

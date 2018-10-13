@@ -18,7 +18,6 @@
 from enum import Enum
 from datetime import datetime
 
-from .env import env
 from .utils import get_id_gen
 
 
@@ -35,7 +34,8 @@ class Event(object):
     """
     id_gen = get_id_gen(prefix='Event')
 
-    def __init__(self, name, dt=None, expire=0, event_id=None, **kwargs):
+    def __init__(self, env, name, dt=None, expire=0, event_id=None, **kwargs):
+        self.env = env
         self._name = name
         self._event_id = event_id
         self._kwargs = kwargs
@@ -44,7 +44,7 @@ class Event(object):
         if dt:
             self._timestamp = dt.timestamp()
         else:
-            self._timestamp = env.dispatcher.now.timestamp()
+            self._timestamp = self.env.dispatcher.now.timestamp()
         if self._event_id is None:
             self._event_id = next(Event.id_gen)
 

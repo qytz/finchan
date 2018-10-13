@@ -18,7 +18,7 @@
 
 usage::
 
-    def setup()
+    def setup(env)
         scheduler = env.get_ext_obj('finchan.exts.timer_source')
         scheduler.run_every(3).to(5).minutes().do(timer_call)
         scheduler.run_every(1).days.offset('09:31').tag('daily_task').do(timer_call)
@@ -28,7 +28,7 @@ usage::
         scheduler.run_every(1).months.offset('09 09:31').tag('daily_task').do(timer_call)
 
 
-    def clean()
+    def clean(env)
         scheduler = env.get_ext_obj('finchan.exts.timer_source')
         scheduler.cancel_all_jobs()
 
@@ -40,7 +40,6 @@ import collections
 from datetime import datetime, timedelta
 from dateutil.parser import parse as parse_dt
 
-from finchan.env import env
 from finchan.event import Event
 from finchan.utils import get_id_gen
 from finchan.interface.event_source import AbsEventSource
@@ -57,7 +56,7 @@ logger = logging.getLogger(__name__)
 def event_callback(event):
     """call timer func in event callback"""
     func = event.kwargs['func']
-    return func(*event.kwargs['args'], **event.kwargs['kwargs'])
+    return func(event.env, *event.kwargs['args'], **event.kwargs['kwargs'])
 
 
 class JobMananger(object):
@@ -68,7 +67,8 @@ class JobMananger(object):
 
     TODO: schedule with asyncio.sleep(idle_seconds) and loop.create_task and task.cancel.
     """
-    def __init__(self):
+    def __init__(self, env):
+        self.env = env
         self.jobs = []
         self.curr_job = None
 
@@ -128,7 +128,7 @@ class JobMananger(object):
     def idle_seconds(self):
         """idle seconds before next job should run"""
         next_job = self.get_next_job()
-        return (next_job.next_run - env.now).total_seconds()
+        return (next_job.next_run - self.env.now).total_seconds()
 
     async def schedule(self):
         """TODO: implement this."""
@@ -176,6 +176,7 @@ class Job(object):
         self.unit = unit
         self.next_run = next_run
         self.job_manager = job_manager
+        self.env = job_manager.env
         self.min_step = self.max_step = step
 
         self.last_run = None
@@ -334,12 +335,12 @@ class Job(object):
         logger.debug('#Scheduler Job do last_run: %s next_run: %s', self.last_run, self.next_run)
         self.job_manager.add_job(self)
         logger.info('#Scheduler New timer Job added: %s', self)
-        env.dispatcher.subscribe(self.event_name, event_callback)
+        self.job_manager.env.dispatcher.subscribe(self.event_name, event_callback)
         return self
 
     def gen_event(self):
         """Generate the event and schedule the next time of the timer event occurs."""
-        event = Event(self.event_name, dt=self.next_run, **self.event_kwargs)
+        event = Event(self.env, self.event_name, dt=self.next_run, **self.event_kwargs)
         if self.unit == 'once':
             self.job_manager.cancel(self)
         else:
@@ -369,6 +370,7 @@ class Job(object):
 
         replay_dict = {}
         offset_dict = {}
+        env = self.job_manager.env
         if self.offset_dt.year < env.now.year:
             replay_dict['year'] = env.now.year
 
@@ -426,10 +428,11 @@ class LiveTimerSource(AbsEventSource):
     """Live TimerEventSource, used for ``live`` mode"""
     _name = "LiveTimerEventSource"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, env, *args, **kwargs):
         """init the event source"""
+        self.env = env
         super().__init__(*args, **kwargs)
-        self.job_manager = JobMananger()
+        self.job_manager = JobMananger(env)
 
     @property
     def name(self):
@@ -449,7 +452,7 @@ class LiveTimerSource(AbsEventSource):
         """
         while True:
             next_job = self.job_manager.get_next_job()
-            if next_job and next_job.next_run <= env.now:
+            if next_job and next_job.next_run <= self.env.now:
                 event_queue.put(next_job.gen_event())
                 if next_job.unit == 'once':
                     self.job_manager.cancel(next_job)
@@ -475,9 +478,10 @@ class BackTimerSource(AbsEventSource):
     """Backtrack TimerEventSource, used for ``backtrack`` mode"""
     _name = "BackTrackTimerEventSource"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, env, *args, **kwargs):
         """init the event source"""
-        self.job_manager = JobMananger()
+        self.env = env
+        self.job_manager = JobMananger(env)
 
     @property
     def name(self):
@@ -517,9 +521,9 @@ class BackTimerSource(AbsEventSource):
 
 def load_finchan_ext(env, *args, **kwargs):
     if env.run_mode == 'backtrack':
-        timer_source = BackTimerSource()
+        timer_source = BackTimerSource(env)
     else:
-        timer_source = LiveTimerSource()
+        timer_source = LiveTimerSource(env)
     env.set_ext_obj(ext_name, timer_source.job_manager)
     env.dispatcher.register_event_source(timer_source)
 

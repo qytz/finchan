@@ -18,7 +18,6 @@
 import time
 import logging
 
-from finchan.env import env
 from finchan.event import SysEvents
 
 # name of the extension
@@ -31,13 +30,13 @@ logger = logging.getLogger(__name__)
 logger = logging.getLogger()
 
 
-def timer_call():
+def timer_call(env):
     logger.info(f'timer callback @ {env.now}')
 
 
 def add_timer(event):
-    scheduler = env.get_ext_obj('finchan.exts.timer_source')
-    if env.run_mode == 'live_track':
+    scheduler = event.env.get_ext_obj('finchan.exts.timer_source')
+    if event.env.run_mode == 'live_track':
         scheduler.run_every(3).to(5).seconds().do(timer_call)
     else:
         scheduler.run_every(3).to(15).minutes().do(timer_call)

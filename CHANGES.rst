@@ -2,6 +2,10 @@
 History
 =======
 
+0.1.3 (2018-10-XX)
+
+* remove global env object, you can reference by event.env.
+
 0.1.2 (2018-10-01)
 ------------------
 

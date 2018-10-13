@@ -25,7 +25,7 @@ import logging.config
 import click
 import uvloop
 
-from .env import env
+from .env import Env
 from .exts import ExtManager
 from .options import parse_yaml_conf
 from .dispatcher import BackTrackDispatcher, LiveDispatcher
@@ -53,6 +53,7 @@ def main(verbose=0, config=None):
     See the License for the specific language governing permissions and
     limitations under the License.
     """
+    env = Env()
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     env.verbose = verbose
     if not config:
@@ -70,6 +71,9 @@ def main(verbose=0, config=None):
     os.makedirs(os.path.join(work_dir, "logs"), exist_ok=True)
     os.chdir(work_dir)
     log_config = env.options.get("log_config", {})
+    # patch the log filter parameters
+    if "filters" in log_config and "finchan" in log_config["filters"]:
+        log_config["filters"]["finchan"]["env"] = env
     logging.config.dictConfig(log_config)
     if env.options["run_mode"] == "backtrack":
         env.run_mode = "backtrack"
@@ -92,19 +96,19 @@ def main(verbose=0, config=None):
         backtrack_args = env.options.get("backtrack", None)
         if not backtrack_args:
             backtrack_args = {}
-        dispatcher = BackTrackDispatcher(**backtrack_args)
+        dispatcher = BackTrackDispatcher(env, **backtrack_args)
         ext_dict = env.options.get("backtrack_exts", None)
     else:
         live_track_args = env.options.get("live_track", None)
         if not live_track_args:
             live_track_args = {}
-        dispatcher = LiveDispatcher(**live_track_args)
+        dispatcher = LiveDispatcher(env, **live_track_args)
         ext_dict = env.options.get("live_track_exts", None)
 
     extm_args = env.options["ext_manager"]
     if not extm_args:
         extm_args = {}
-    ext_manager = ExtManager(**extm_args)
+    ext_manager = ExtManager(env, **extm_args)
     env.set_dispatcher(dispatcher)
     env.set_ext_manager(ext_manager)
 

@@ -49,7 +49,8 @@ class BaseDispatcher(abc.ABC):
     :param eventq: queue to r/s event
     :param end_dt: dispatch end time
     """
-    def __init__(self, **kwargs):
+    def __init__(self, env, **kwargs):
+        self.env = env
         self._will_stop = False
         self._event_sources = []
         self._end_dt = kwargs.get('end_dt')
@@ -70,8 +71,11 @@ class BaseDispatcher(abc.ABC):
 
     def quit_handler(self, signum, frame):
         """quit signal handler, callbacks for signal: ctrl\_c/ctrl\_\\"""
-        self._will_stop = True
-        logger.info('#Dispatcher get signal: %s system will exit.', signum)
+        if not self._will_stop:
+            self._will_stop = True
+            logger.info('#Dispatcher get signal: %s system will exit.', signum)
+        else:
+            logger.info('#Dispatcher get signal: %s system is exiting, please wait...', signum)
 
     def register_event_source(self, event_source):
         """register new event source
@@ -229,7 +233,7 @@ class BaseDispatcher(abc.ABC):
             return None
 
         # system initialized
-        self.eq_put(Event(SysEvents.SYSTEM_STARTED))
+        self.eq_put(Event(self.env, SysEvents.SYSTEM_STARTED))
 
         self.setup()
         last_event = None
@@ -259,17 +263,21 @@ class BaseDispatcher(abc.ABC):
                 break
 
         # system is exiting
-        self.eq_put(Event(SysEvents.SYSTEM_EXITING))
+        self.eq_put(Event(self.env, SysEvents.SYSTEM_EXITING))
         logger.info('#Dispatcher loop exit.')
         self._will_stop = True
         self.cleanup()
 
     async def _wrap_coroutine(self, coroutine, *args, **kwargs):
         """wrap coroutine, catch exceptions"""
-        try:
-            await coroutine(*args, **kwargs)
-        except Exception as e:
-            logger.error('coroutine: %s exception: %s', coroutine, e)
+        # TODO: add retry and delay retry options
+        exc_retry_cnt = 1
+        while exc_retry_cnt > 0:
+            exc_retry_cnt -= 1
+            try:
+                await coroutine(*args, **kwargs)
+            except Exception as e:
+                logger.error('#Dispatcher coroutine: %s exception: %s', coroutine, e)
 
 
 class BackTrackDispatcher(BaseDispatcher):
@@ -286,9 +294,9 @@ class BackTrackDispatcher(BaseDispatcher):
     :param time_step: time step for backtrack dispatch
     :param trace_process_time: pass
     """
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
         eventq = PriorityQueue()
-        super().__init__(eventq=eventq, **kwargs)
+        super().__init__(eventq=eventq, *args, **kwargs)
 
         self._start_dt = kwargs.get('start_dt')
         self._time_step = kwargs.get('time_step', 86400)
@@ -314,6 +322,7 @@ class BackTrackDispatcher(BaseDispatcher):
         if limit_dt > self._end_dt:
             limit_dt = self._end_dt
         for event_source in self._event_sources:
+            # futures.append(event_source.gen_events(self._eventq, limit_dt))
             futures.append(self._wrap_coroutine(event_source.gen_events, self._eventq, limit_dt))
 
         try:
@@ -321,6 +330,7 @@ class BackTrackDispatcher(BaseDispatcher):
         except RuntimeError as e:
             asyncio.set_event_loop(asyncio.new_event_loop())
             loop = asyncio.get_event_loop()
+        # loop.run_until_complete(asyncio.gather(*futures))
         loop.run_until_complete(asyncio.gather(*futures, return_exceptions=True))
         logger.debug('#Dispatcher Forward backtrack time from %s to %s...', self._gen_dt, limit_dt)
         self._gen_dt = limit_dt
@@ -345,14 +355,14 @@ class LiveDispatcher(BaseDispatcher):
 
     :param stop_check_interval: stop check interval
     """
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
         eventq = Queue()
         # the thread should check exit after main thread call join, other will run in deadlock.
         self._thread_exit = False
         self._event_source_thread = None
         # never stop by runout time.
         end_dt = datetime.strptime('9999-12-31', '%Y-%m-%d')
-        super().__init__(eventq=eventq, end_dt=end_dt, **kwargs)
+        super().__init__(eventq=eventq, end_dt=end_dt, *args, **kwargs)
         self._stop_check_interval = kwargs.get('stop_check_interval', 5)
 
     async def stop_check(self):
@@ -374,13 +384,14 @@ class LiveDispatcher(BaseDispatcher):
                 break
             futures = [self.stop_check()]
             for event_source in self._event_sources:
-                futures.append(event_source.gen_events(self._eventq))
-                # futures.append(self._wrap_coroutine(event_source.gen_events, self._eventq))
+                # futures.append(event_source.gen_events(self._eventq))
+                futures.append(self._wrap_coroutine(event_source.gen_events, self._eventq))
             if not futures:
                 logger.warning('#Dispatcher No event source futures found, '
                                'EventSourceManager thread exiting.')
                 break
             try:
+                # loop.run_until_complete(asyncio.gather(*futures))
                 loop.run_until_complete(asyncio.gather(*futures, return_exceptions=True))
             except RuntimeError as e:
                 logger.error('#Dispatcher run exception: %s', e)

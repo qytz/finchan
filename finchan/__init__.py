@@ -16,7 +16,7 @@
 # limitations under the License.
 """Finchan system."""
 from . import __version__
-from .env import env
+from .env import Env
 from .exts import ExtManager
 from .event import Event, SysEvents
 from .dispatcher import BackTrackDispatcher, LiveDispatcher

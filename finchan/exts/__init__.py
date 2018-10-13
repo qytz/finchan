@@ -21,8 +21,6 @@ import logging
 from importlib import import_module
 from collections import OrderedDict
 
-from finchan.env import env
-
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +73,8 @@ class ExtManager(object):
     in a configured path `config.ext_path`.
     This directory is added to ``sys.path`` automatically.
     """
-    def __init__(self, ext_path='', **kwargs):
+    def __init__(self, env, ext_path='', **kwargs):
+        self.env = env
         self._ext_path = ext_path
         self._loaded_exts = OrderedDict()
 
@@ -99,12 +98,12 @@ class ExtManager(object):
                     continue
                 try:
                     kwargs = dict(exts[ext_name])
-                    ext.load_finchan_ext(env, **kwargs)
+                    ext.load_finchan_ext(self.env, **kwargs)
                 except ValueError:
                     args = list(exts[ext_name])
-                    ext.load_finchan_ext(env, *args)
+                    ext.load_finchan_ext(self.env, *args)
                 except TypeError:
-                    ext.load_finchan_ext(env)
+                    ext.load_finchan_ext(self.env)
                 self._loaded_exts[ext_name] = ext
                 logger.info('#Extm ext[%s] loaded.', ext_name)
 
@@ -123,6 +122,6 @@ class ExtManager(object):
             if not hasattr(ext, 'unload_finchan_ext'):
                 logger.warning('Ext[%s] has no unload func, skip...', ext_name)
                 continue
-            ext.unload_finchan_ext(env)
+            ext.unload_finchan_ext(self.env)
             del self._loaded_exts[ext_name]
             logger.info('#Extm ext[%s] loaded.', ext_name)

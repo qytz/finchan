@@ -119,4 +119,4 @@ class Env(object):
         self._ext_manager.load_exts(*exts)
 
 
-env = Env()
+# env = Env()
