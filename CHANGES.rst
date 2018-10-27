@@ -2,7 +2,8 @@
 History
 =======
 
-0.1.3 (2018-10-XX)
+0.1.3 (2018-10-27)
+------------------
 
 * remove global env object, you can reference by event.env.
 * fix finchan.exts.timer_souce schedule format for month/year/week.
