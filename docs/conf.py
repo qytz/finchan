@@ -53,6 +53,7 @@ extensions = ['sphinx.ext.autodoc',
     'sphinx.ext.intersphinx',
     'sphinx.ext.todo',
     'sphinx.ext.mathjax',
+    'sphinx.ext.githubpages',
     'sphinx.ext.viewcode']
 
 # Add any paths that contain templates here, relative to this directory.
@@ -228,3 +229,5 @@ coverage_ignore_functions = [
     "main",
 ]
 
+# If true, `todo` and `todoList` produce output, else they produce nothing.
+todo_include_todos = True

@@ -6,7 +6,6 @@ from setuptools import setup, find_packages
 
 here = os.path.abspath(os.path.dirname(__file__))
 
-print(find_packages(where=here, exclude='tests'))
 # 'setup.py publish' shortcut.
 # if sys.argv[-1] == 'publish':
 #     os.system('python setup.py sdist bdist_wheel')

@@ -52,6 +52,8 @@ def main(verbose=0, config=None):
     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
     See the License for the specific language governing permissions and
     limitations under the License.
+
+    Project url: https://github.com/qytz/finchan
     """
     env = Env()
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
