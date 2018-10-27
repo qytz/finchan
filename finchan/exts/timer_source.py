@@ -37,8 +37,9 @@ import random
 import asyncio
 import logging
 import collections
-from datetime import datetime, timedelta
+from datetime import datetime
 from dateutil.parser import parse as parse_dt
+from dateutil.relativedelta import relativedelta
 
 from finchan.event import Event
 from finchan.utils import get_id_gen
@@ -403,7 +404,7 @@ class Job(object):
             replay_dict['second'] = self.offset_dt.second
 
         bench_dt = env.now.replace(**replay_dict)
-        self.next_run = bench_dt + timedelta(**offset_dict)
+        self.next_run = bench_dt + relativedelta(**offset_dict)
         while self.next_run < env.now:
             self.last_run = self.next_run
             self._schedule_next_run()
@@ -417,11 +418,7 @@ class Job(object):
             step = random.randint(self.min_step, self.max_step)
         else:
             step = self.min_step
-
-        if self.unit == 'weeks':
-            self.next_run = self.last_run + timedelta(days=step*7)
-        else:
-            self.next_run = self.last_run + timedelta(**{self.unit: step})
+        self.next_run = self.last_run + timedelta(**{self.unit: step})
 
 
 class LiveTimerSource(AbsEventSource):
