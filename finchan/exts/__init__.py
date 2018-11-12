@@ -57,7 +57,7 @@ class ExtManager(object):
     An finchan extension is an importable Python module that has
     a function with the signature::
 
-        def load_finchan_ext(*args, **kwargs):
+        def load_finchan_ext(env):
             # Do setup
 
     This function is called after your extension is imported.
@@ -73,7 +73,8 @@ class ExtManager(object):
     in a configured path `config.ext_path`.
     This directory is added to ``sys.path`` automatically.
     """
-    def __init__(self, env, ext_path='', **kwargs):
+
+    def __init__(self, env, ext_path="", **kwargs):
         self.env = env
         self._ext_path = ext_path
         self._loaded_exts = OrderedDict()
@@ -83,45 +84,44 @@ class ExtManager(object):
 
         :param exts: exts dict, key is extension name, value is extension kwargs
         """
-        logger.info('#Extm loading exts...')
+        logger.info("#Extm loading exts...")
         with add_to_syspath(self._ext_path):
             for ext_name in exts:
-                logger.info('#Extm loading ext %s...', ext_name)
+                logger.info("#Extm loading ext %s...", ext_name)
                 if ext_name in self._loaded_exts:
-                    logger.warning('Ext[%s] has been loaded: %s, skip...',
-                                   ext_name,
-                                   self._loaded_exts[ext_name])
+                    logger.warning(
+                        "Ext[%s] has been loaded: %s, skip...",
+                        ext_name,
+                        self._loaded_exts[ext_name],
+                    )
                     continue
                 ext = import_module(ext_name)
-                if not hasattr(ext, 'load_finchan_ext'):
-                    logger.warning('Invalid ext[%s] for finchan: %s', ext_name, ext)
+                if not hasattr(ext, "load_finchan_ext"):
+                    logger.warning("Invalid ext[%s] for finchan: %s", ext_name, ext)
                     continue
                 try:
-                    kwargs = dict(exts[ext_name])
-                    ext.load_finchan_ext(self.env, **kwargs)
-                except ValueError:
-                    args = list(exts[ext_name])
-                    ext.load_finchan_ext(self.env, *args)
-                except TypeError:
                     ext.load_finchan_ext(self.env)
+                except Exception as e:
+                    logger.error("Load extensiong %s failed: %s", str(e))
+                    continue
                 self._loaded_exts[ext_name] = ext
-                logger.info('#Extm ext[%s] loaded.', ext_name)
+                logger.info("#Extm ext[%s] loaded.", ext_name)
 
     def unload_exts(self, *exts):
         """unload exts for finchan
 
         :param exts: ext_name args list
         """
-        logger.info('#Extm unloading exts...')
+        logger.info("#Extm unloading exts...")
         for ext_name in exts:
-            logger.info('#Extm unloading ext %s...', ext_name)
+            logger.info("#Extm unloading ext %s...", ext_name)
             if ext_name not in self._loaded_exts:
-                logger.warning('Ext[%s] has not been loaded, skip...', ext_name)
+                logger.warning("Ext[%s] has not been loaded, skip...", ext_name)
                 continue
             ext = self._loaded_exts[ext_name]
-            if not hasattr(ext, 'unload_finchan_ext'):
-                logger.warning('Ext[%s] has no unload func, skip...', ext_name)
+            if not hasattr(ext, "unload_finchan_ext"):
+                logger.warning("Ext[%s] has no unload func, skip...", ext_name)
                 continue
             ext.unload_finchan_ext(self.env)
             del self._loaded_exts[ext_name]
-            logger.info('#Extm ext[%s] loaded.', ext_name)
+            logger.info("#Extm ext[%s] unloaded.", ext_name)

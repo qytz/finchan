@@ -43,7 +43,7 @@ def add_timer(event):
     logger.info('#TimerCall timer job added')
 
 
-def load_finchan_ext(env, process_time=3, *args, **kwargs):
+def load_finchan_ext(env, *args, **kwargs):
     env.dispatcher.subscribe(SysEvents.SYSTEM_STARTED, add_timer)
 
 def unload_finchan_ext(env):
