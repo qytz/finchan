@@ -2,6 +2,13 @@
 History
 =======
 
+0.2.0 (2018-11-15)
+------------------
+* optimized exit check mechanism, can exit quickly now.
+* exts load interface has no parameters now.
+* support multiple splited configure files.
+* support extension groups.
+
 0.1.3 (2018-10-27)
 ------------------
 
