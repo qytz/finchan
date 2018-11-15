@@ -1,0 +1,41 @@
+%YAML 1.2
+---
+# logging config, console is not included, support python logging.config.dictConfig
+
+"log_config":
+    "version": 1
+    "formatters":
+        "verbose":
+            "class": "logging.Formatter"
+            "format": "%(asctime)s %(name)-15s %(levelname)-8s %(message)s"
+        "simple":
+            "class": "logging.Formatter"
+            "format": "%(asctime)s %(levelname)s %(message)s"
+    "filters":
+        "finchan":
+            "()": "finchan.log.get_finchan_filter"
+    "handlers":
+        # "console":
+        #     "class": "logging.StreamHandler"
+        #     "level": "INFO"
+        #     "formatter": "simple"
+        "file":
+            "class": "logging.FileHandler"
+            "filename": "logs/log.log"
+            "mode": "w"
+            "formatter": "verbose"
+            "filters": ["finchan"]
+            "level": "DEBUG"
+        "errors":
+            "class": "logging.FileHandler"
+            "filename": "logs/errors.log"
+            "mode": "w"
+            "level": "ERROR"
+            "filters": ["finchan"]
+            "formatter": "verbose"
+    "loggers":
+        "finchan":
+            "propagate": "true"
+    "root":
+        "level": "DEBUG"
+        "handlers": ["file", "errors"]

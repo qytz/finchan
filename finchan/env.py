@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 class Env(object):
     """Global environment"""
+
     def __init__(self):
         self.run_mode = None
         self.options = None
@@ -97,10 +98,10 @@ class Env(object):
         """get options for extension named `ext` in configure file"""
         if not self.options:
             return {}
-        if self.run_mode == 'backtrack':
-            ext_dict = self.options.get('backtrack_exts', None)
+        if self.run_mode == "backtrack":
+            ext_dict = self.options.get("backtrack_exts", None)
         else:
-            ext_dict = self.options.get('live_track_exts', None)
+            ext_dict = self.options.get("live_track_exts", None)
         if not ext_dict:
             return {}
         return ext_dict.get(ext, {})
@@ -108,14 +109,14 @@ class Env(object):
     def run(self):
         """wraps dispatcher's run"""
         if not self._dispathcer:
-            logger.warning('No dispatcher setted, cannot run.')
+            logger.warning("No dispatcher setted, cannot run.")
             return None
         return self._dispathcer.dispatch()
 
     def load_exts(self, *exts):
         """load all the extensions in \*exts list"""
         if not self._ext_manager:
-            logger.warning('call load_exts without setting ext_manager, no exts loaded')
+            logger.warning("call load_exts without setting ext_manager, no exts loaded")
         self._ext_manager.load_exts(*exts)
 
 

@@ -1,0 +1,11 @@
+%YAML 1.2
+---
+# live track exts' configs
+
+"live_track_exts":
+    "finchan.exts.timer_source":
+        # time event frequency, unit is second
+        "frequency": 1
+    "finchan.exts.timer_callback":
+        # process time in second
+        "process_time": 1

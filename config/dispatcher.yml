@@ -1,0 +1,16 @@
+%YAML 1.2
+---
+# dispathcer configs
+
+"dispatcher.live_track":
+    # live track: parameter for live dispatcher, will pass to LiveDispatcher
+    "stop_check_interval": 1
+
+"dispatcher.backtrack":
+    # backtrack: parameter for backtrack dispatcher, will pass to BackTrackDispatcher
+    # time step in seconds for backtest
+    "time_step": 86400    # one day
+    "start_dt": 2017-03-04 12:00:00
+    "end_dt": 2017-03-07 12:00:00
+    # trace_process_time, if set to true, the event process time is added to now
+    "trace_process_time": true

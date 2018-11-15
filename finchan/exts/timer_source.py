@@ -39,7 +39,7 @@ import logging
 import collections
 from datetime import datetime
 from dateutil.parser import parse as parse_dt
-from dateutil.relativedelta import relativedelta
+from dateutil.relativedelta import relativedelta as timedelta
 
 from finchan.event import Event
 from finchan.utils import get_id_gen
@@ -404,7 +404,7 @@ class Job(object):
             replay_dict['second'] = self.offset_dt.second
 
         bench_dt = env.now.replace(**replay_dict)
-        self.next_run = bench_dt + relativedelta(**offset_dict)
+        self.next_run = bench_dt + timedelta(**offset_dict)
         while self.next_run < env.now:
             self.last_run = self.next_run
             self._schedule_next_run()

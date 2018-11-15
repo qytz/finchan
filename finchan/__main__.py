@@ -27,7 +27,7 @@ import uvloop
 
 from .env import Env
 from .exts import ExtManager
-from .options import parse_yaml_conf
+from .options import load_configs
 from .dispatcher import BackTrackDispatcher, LiveDispatcher
 
 
@@ -63,8 +63,8 @@ def main(verbose=0, config=None):
     else:
         conf_path = config
     try:
-        env.options = parse_yaml_conf(conf_path)
-    except (Exception, Warning) as e:
+        env.options = load_configs(conf_path)
+    except (SyntaxError, TypeError) as e:
         print("Parse configure file failed, please check: %s" % e)
         return
 
@@ -95,17 +95,13 @@ def main(verbose=0, config=None):
 
     root_logger.info("Run in %s mode", env.run_mode)
     if env.run_mode == "backtrack":
-        backtrack_args = env.options.get("backtrack", None)
-        if not backtrack_args:
-            backtrack_args = {}
-        dispatcher = BackTrackDispatcher(env, **backtrack_args)
-        ext_dict = env.options.get("backtrack_exts", None)
+        dispatcher_config = env.options.get("dispatcher.backtrack", {})
+        dispatcher = BackTrackDispatcher(env, **dispatcher_config)
+        ext_dict = env.options.get("backtrack_exts", {})
     else:
-        live_track_args = env.options.get("live_track", None)
-        if not live_track_args:
-            live_track_args = {}
-        dispatcher = LiveDispatcher(env, **live_track_args)
-        ext_dict = env.options.get("live_track_exts", None)
+        dispatcher_config = env.options.get("dispatcher.live_track", {})
+        dispatcher = LiveDispatcher(env, **dispatcher_config)
+        ext_dict = env.options.get("live_track_exts", {})
 
     extm_args = env.options["ext_manager"]
     if not extm_args:
@@ -114,8 +110,6 @@ def main(verbose=0, config=None):
     env.set_dispatcher(dispatcher)
     env.set_ext_manager(ext_manager)
 
-    if not ext_dict:
-        ext_dict = {}
     env.load_exts(ext_dict)
     env.run()
 
