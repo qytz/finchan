@@ -51,7 +51,7 @@ class BaseDispatcher(abc.ABC):
     """
     def __init__(self, env, **kwargs):
         self.env = env
-        self._will_stop = False
+        self._stop_flag = False
         self._event_sources = []
         self._end_dt = kwargs.get('end_dt')
         self._eventq = kwargs.get('eventq')
@@ -71,8 +71,8 @@ class BaseDispatcher(abc.ABC):
 
     def quit_handler(self, signum, frame):
         """quit signal handler, callbacks for signal: ctrl\_c/ctrl\_\\"""
-        if not self._will_stop:
-            self._will_stop = True
+        if not self._stop_flag:
+            self._stop_flag = True
             logger.info('#Dispatcher get signal: %s system will exit.', signum)
         else:
             logger.info('#Dispatcher get signal: %s system is exiting, please wait...', signum)
@@ -228,7 +228,7 @@ class BaseDispatcher(abc.ABC):
     def dispatch(self):
         """dispatch the event loop to run."""
         if not self._event_sources:
-            self._will_stop = True
+            self._stop_flag = True
             logger.warning('#Dispatcher No EventSource registered, system will exit directly.')
             return None
 
@@ -255,7 +255,7 @@ class BaseDispatcher(abc.ABC):
             logger.debug('#Dispatcher Start process event: %s', event)
             for call_func in self._event_subscribes[event.name]:
                 call_func(event)
-                if self._will_stop:
+                if self._stop_flag:
                     break
             last_event = event
             if self.now >= self._end_dt:
@@ -265,7 +265,7 @@ class BaseDispatcher(abc.ABC):
         # system is exiting
         self.eq_put(Event(self.env, SysEvents.SYSTEM_EXITING))
         logger.info('#Dispatcher loop exit.')
-        self._will_stop = True
+        self._stop_flag = True
         self.cleanup()
 
     async def _wrap_coroutine(self, coroutine, *args, **kwargs):
@@ -276,6 +276,8 @@ class BaseDispatcher(abc.ABC):
             exc_retry_cnt -= 1
             try:
                 await coroutine(*args, **kwargs)
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 logger.error('#Dispatcher coroutine: %s exception: %s', coroutine, e)
 
@@ -358,41 +360,51 @@ class LiveDispatcher(BaseDispatcher):
     def __init__(self, *args, **kwargs):
         eventq = Queue()
         # the thread should check exit after main thread call join, other will run in deadlock.
-        self._thread_exit = False
+        self._thread_event = None
+        self._thread_loop = None
         self._event_source_thread = None
         # never stop by runout time.
         end_dt = datetime.strptime('9999-12-31', '%Y-%m-%d')
         super().__init__(eventq=eventq, end_dt=end_dt, *args, **kwargs)
-        self._stop_check_interval = kwargs.get('stop_check_interval', 5)
+
+    def quit_handler(self, signum, frame):
+        super().quit_handler(signum, frame)
+        if self._thread_event:
+            self._thread_loop.call_soon_threadsafe(self._thread_event.set)
 
     async def stop_check(self):
         """check if the dispatcher should stop, runs in the event source thread."""
-        while True:
-            if self._thread_exit:
-                break
-            await asyncio.sleep(self._stop_check_interval)
+        await self._thread_event.wait()
+        try:    # Python <3.7 has no the method
+            for task in asyncio.all_tasks():
+                task.cancel()
+        except AttributeError as e:
+            pass
         loop = asyncio.get_event_loop()
         loop.stop()
+        loop.close()
 
     def gen_events(self):
         """generate events from event sources."""
         asyncio.set_event_loop(asyncio.new_event_loop())
         loop = asyncio.get_event_loop()
+        self._thread_loop = loop
+        self._thread_event = asyncio.Event()
         self.start_event_sources()
         while True:
-            if self._thread_exit:
+            if self._stop_flag:
                 break
-            futures = [self.stop_check()]
+            tasks = [self.stop_check()]
             for event_source in self._event_sources:
-                # futures.append(event_source.gen_events(self._eventq))
-                futures.append(self._wrap_coroutine(event_source.gen_events, self._eventq))
-            if not futures:
-                logger.warning('#Dispatcher No event source futures found, '
+                # tasks.append(event_source.gen_events(self._eventq))
+                tasks.append(self._wrap_coroutine(event_source.gen_events, self._eventq))
+            if not tasks:
+                logger.warning('#Dispatcher No event source tasks found, '
                                'EventSourceManager thread exiting.')
                 break
             try:
-                # loop.run_until_complete(asyncio.gather(*futures))
-                loop.run_until_complete(asyncio.gather(*futures, return_exceptions=True))
+                # loop.run_until_complete(asyncio.gather(*tasks))
+                loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
             except RuntimeError as e:
                 logger.error('#Dispatcher run exception: %s', e)
         logger.debug('#Dispatcher gen event thread exit.')
@@ -403,11 +415,13 @@ class LiveDispatcher(BaseDispatcher):
 
         :return: next event to process
         """
+        if self._stop_flag or not self._event_source_thread.is_alive():
+            return None
         while True:
             try:
-                return self.eq_get(timeout=self._stop_check_interval)
+                return self.eq_get(timeout=1)
             except Empty:
-                if self._will_stop:
+                if self._stop_flag or not self._event_source_thread.is_alive():
                     return None
 
     def setup(self):
@@ -419,6 +433,5 @@ class LiveDispatcher(BaseDispatcher):
     def cleanup(self):
         """cleanup the dispatcher"""
         super().cleanup()
-        self._thread_exit = True
         if self._event_source_thread:
             self._event_source_thread.join()
