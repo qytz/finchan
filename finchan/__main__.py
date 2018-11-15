@@ -97,11 +97,11 @@ def main(verbose=0, config=None):
     if env.run_mode == "backtrack":
         dispatcher_config = env.options.get("dispatcher.backtrack", {})
         dispatcher = BackTrackDispatcher(env, **dispatcher_config)
-        ext_dict = env.options.get("backtrack_exts", {})
+        enabled_exts = env.options.get("enabled_backtrack_exts", [])
     else:
         dispatcher_config = env.options.get("dispatcher.live_track", {})
         dispatcher = LiveDispatcher(env, **dispatcher_config)
-        ext_dict = env.options.get("live_track_exts", {})
+        enabled_exts = env.options.get("enabled_live_exts", [])
 
     extm_args = env.options["ext_manager"]
     if not extm_args:
@@ -110,7 +110,7 @@ def main(verbose=0, config=None):
     env.set_dispatcher(dispatcher)
     env.set_ext_manager(ext_manager)
 
-    env.load_exts(ext_dict)
+    env.load_exts(enabled_exts)
     env.run()
 
 

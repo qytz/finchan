@@ -1,0 +1,8 @@
+"ext_groups":
+    "backtrack_test":
+        - "finchan.exts.timer_source"
+        - "finchan.exts.timer_callback"
+
+    "live_test":
+        - "finchan.exts.timer_source"
+        - "finchan.exts.timer_callback"

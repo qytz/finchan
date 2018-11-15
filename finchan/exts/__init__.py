@@ -85,8 +85,16 @@ class ExtManager(object):
         :param exts: exts dict, key is extension name, value is extension kwargs
         """
         logger.info("#Extm loading exts...")
+        clean_exts = []
+        ext_groups = self.env.options.get("ext_groups", [])
+        for ext in exts:
+            if ext in ext_groups:
+                clean_exts.extend(ext_groups[ext])
+            else:
+                clean_exts.append(ext)
+
         with add_to_syspath(self._ext_path):
-            for ext_name in exts:
+            for ext_name in clean_exts:
                 logger.info("#Extm loading ext %s...", ext_name)
                 if ext_name in self._loaded_exts:
                     logger.warning(

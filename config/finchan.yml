@@ -4,8 +4,8 @@
 
 "version": 1
 # "run_mode": support live/backtrack
-"run_mode": "backtrack"
-# "run_mode": "live"
+# "run_mode": "backtrack"
+"run_mode": "live"
 
 "work_dir": "~/.finchan"
 
