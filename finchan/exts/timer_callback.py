@@ -16,6 +16,7 @@
 # limitations under the License.
 """time event source"""
 import time
+import asyncio
 import logging
 
 from finchan.event import SysEvents
@@ -27,14 +28,15 @@ required_exts = ['finchan.exts.timer_source']
 
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger()
+
+async def timer_call(env):
+    ct = time.time()
+    logger.info('timer callback<%s>', ct)
+    await env.dispatcher.run_in_executor(time.sleep, "process", 3)
+    logger.info('timer callback<%s> finish', ct)
 
 
-def timer_call(env):
-    logger.info(f'timer callback @ {env.now}')
-
-
-def add_timer(event):
+async def add_timer(event):
     scheduler = event.env.get_ext_obj('finchan.exts.timer_source')
     if event.env.run_mode == 'live_track':
         scheduler.run_every(3).to(5).seconds().do(timer_call)

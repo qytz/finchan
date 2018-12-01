@@ -18,15 +18,14 @@
 
 get events from event source and dispatch evnets to the subscriber.
 """
-import os
-import abc
 import time
 import signal
 import asyncio
 import logging
-import threading
-from queue import Queue, PriorityQueue, Empty
-from datetime import datetime
+import functools
+from asyncio import Queue, PriorityQueue, QueueEmpty
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from datetime import datetime, timedelta
 from collections import defaultdict
 
 from .event import Event, SysEvents
@@ -36,46 +35,66 @@ from finchan.interface.event_source import AbsEventSource
 logger = logging.getLogger(__name__)
 
 
-class BaseDispatcher(abc.ABC):
-    """Event dispatcher abstract clsss.
-
-    methods subclass should implement:
-
-        * setup: need to start all the event sources and can also do other setup things.
-        * cleanup: stop all the evnent source and do other cleanup things.
-        * get_next_event: return the next event to dispath.
-
-
-    :param eventq: queue to r/s event
-    :param end_dt: dispatch end time
+class LiveTrackDispatcher(object):
     """
-    def __init__(self, env, **kwargs):
+    Dispatcher that dispatch real time events.
+    the event sources generate events and put them into event queue,
+    the main thread get events from event queue and dispatch them.
+
+    :param env: global environment
+    """
+    def __init__(self, env):
         self.env = env
-        self._stop_flag = False
-        self._event_sources = []
-        self._end_dt = kwargs.get('end_dt')
-        self._eventq = kwargs.get('eventq')
+        self._event_sources = {}
+        self._es_tasks = {}
         self._event_subscribes = defaultdict(list)
 
-        self._start_dt = datetime.now()
-        self._event_timestamp = self._event_process_timestamp = self._start_dt.timestamp()
+        if env.run_mode == "live_track":
+            conf = env.options.get("dispatcher.live_track")
+            queue_size = conf.get("equeue_size", 0)
+            self._eventq = Queue()
+        else:
+            conf = env.options.get("dispatcher.backtrack")
+            queue_size = conf.get("equeue_size", 0)
+            self._eventq = PriorityQueue()
 
-        # signal: ctrl_c/ctrl_\ quit
-        signal.signal(signal.SIGINT, self.quit_handler)
-        # signal.signal(signal.SIGQUIT, self.quit_handler)
+        self._time_step = conf.get("time_step", 86400)  # default to one day
+        self._trace_process_time = conf.get("trace_process_time", False)
+        self._start_dt = conf.get("start_dt", datetime.now())
+        self._end_dt = conf.get("end_dt", datetime.strptime("9999-12-31", "%Y-%m-%d"))
+
+        self._wait_subscribers = conf.get("wait_subscribers", True)
+        self._check_cycle = 0
+        self._check_es_freq = conf.get("check_event_source_cycles", 1)
+
+        self._thread_executor = None
+        self._process_executor = None
+        self._max_thread_workers = conf.get("thread_workers", None)
+        self._max_process_workers = conf.get("process_workers", None)
+
+        self._gen_dt = self._start_dt
+        self._elasped_mark_time = time.time()
+        self._event_occur_ts = self._event_dispatch_ts = self._start_dt.timestamp()
 
     @property
     def now(self):
-        """datetime of current"""
+        """datetime of current logic time"""
         return datetime.now()
 
-    def quit_handler(self, signum, frame):
+    def quit_handler(self, signame):
         """quit signal handler, callbacks for signal: ctrl\_c/ctrl\_\\"""
-        if not self._stop_flag:
-            self._stop_flag = True
-            logger.info('#Dispatcher get signal: %s system will exit.', signum)
-        else:
-            logger.info('#Dispatcher get signal: %s system is exiting, please wait...', signum)
+        self.run_async_task(self.cleanup())
+
+    def register_signals(self, loop=None):
+        """register signals for the loop"""
+        loop = loop or asyncio.get_running_loop()
+        if not loop:
+            return False
+        # for signame in {"SIGINT", "SIGTERM"}:
+        for signame in {"SIGINT"}:
+            loop.add_signal_handler(
+                getattr(signal, signame), functools.partial(self.quit_handler, signame)
+            )
 
     def register_event_source(self, event_source):
         """register new event source
@@ -84,11 +103,14 @@ class BaseDispatcher(abc.ABC):
         :return: True if register succeed else False.
         """
         if not isinstance(event_source, AbsEventSource):
-            logger.warning('#Dispatcher Trying to add invalid EventSource falied: '
-                           'EventSource must be isinstance of AbsEventSource')
+            logger.error(
+                "#Dispatcher Add EventSource<%s> falied: "
+                "EventSource must be isinstance of AbsEventSource",
+                event_source,
+            )
             return False
-        self._event_sources.append(event_source)
-        logger.info('#Dispatcher New event source has been registered: %s.', event_source)
+        self._event_sources[event_source.name] = event_source
+        logger.info("#Dispatcher New EventSource<%s> has been added.", event_source)
         return True
 
     def deregister_event_source(self, event_source):
@@ -98,340 +120,306 @@ class BaseDispatcher(abc.ABC):
         :return: True if deregister succeed, else False.
         """
         if not isinstance(event_source, AbsEventSource):
-            logger.warning('#Dispatcher Trying to remove invalid EventSource falied: '
-                           'EventSource must be isinstance of AbsEventSource')
+            logger.warning(
+                "#Dispatcher Trying to remove EventSource<%s> falied: parameter invalid",
+                event_source,
+            )
             return False
-        self._event_sources.remove(event_source)
-        logger.info('#Dispatcher Event source %s has been deregistered.', event_source)
+        es_name = event_source.name
+        if es_name not in self._event_sources:
+            logger.warning(
+                "#Dispatcher Trying to remove EventSource<%s> falied: not registered", event_source
+            )
+            return False
+
+        if es_name in self._es_tasks:
+            task = self._es_tasks.pop(es_name)
+            try:
+                task.cancel()
+            except Exception:
+                pass
+            event_source.stop()
+        del self._event_sources[es_name]
+        logger.info("#Dispatcher Eventsource<%s> has been deregistered.", event_source)
         return True
 
-    def subscribe(self, name, callback, prepend=False):
+    def subscribe(self, event_name, callback, prepend=False):
         """subscribe an event
 
         when the event occurs, the callback will be called.
 
-        :param name: name of the event
+        :param event_name: name of the event
         :param callback: the callback func will be called
         :param prepend: add to the head of callbacks if `True` , else add to the end.
         :return: True if subscribe succeed, else False.
         """
+        if not isinstance(event_name, str):
+            logger.error("#Dispatcher Failed to subscribe event: event name must be str.")
+            return False
         if not callable(callback):
-            logger.warning(
-                '#Dispatcher Failed to subscribe event: callback callable must be callable.')
+            logger.error(
+                "#Dispatcher Failed to subscribe event<%s>: callback<%s> is not callable.",
+                event_name,
+                callback,
+            )
             return False
-        if not isinstance(name, str):
-            logger.warning('#Dispatcher Failed to subscribe event: event name must be str.')
-            return False
-        self._event_subscribes.setdefault(name, [])
         if prepend:
-            self._event_subscribes[name].insert(0, callback)
+            self._event_subscribes[event_name].insert(0, callback)
         else:
-            self._event_subscribes[name].append(callback)
-        logger.info('#Dispatcher New callback: %s for event %s has been added.', callback, name)
+            self._event_subscribes[event_name].append(callback)
+        logger.info(
+            "#Dispatcher New callback: %s for event %s has been added.", callback, event_name
+        )
         return True
 
-    def unsubscribe(self, name, callback):
+    def unsubscribe(self, event_name, callback):
         """unsubscribe an event
 
-        :param name: name of the event
+        :param event_name: name of the event
         :param callback: the callback func will be called
         :return: True if unsubscribe succeed, else False.
         """
-        if not callable(callback):
-            logger.warning(
-                '#Dispatcher Failed to subscribe event: callback callable must be callable.')
+        if not isinstance(event_name, str):
+            logger.error(
+                "#Dispatcher Failed to unsubscribe event<%s>: event name must be str.", event_name
+            )
             return False
-        if not isinstance(name, str):
-            logger.warning('#Dispatcher Failed to subscribe event: event name must be str.')
-            return False
-        self._event_subscribes.setdefault(name, [])
-        self._event_subscribes[name].remove(callback)
-        logger.info('#Dispatcher Callback: %s for event %s has been removed.', callback, name)
+        try:
+            self._event_subscribes[event_name].remove(callback)
+        except ValueError:
+            logger.error(
+                "#Dispatcher Failed to unsubscribe event<%s>: %s not subscribed.",
+                event_name,
+                callback,
+            )
+
+        logger.info(
+            "#Dispatcher Callback<%s> for Event<%s> has been unsubscribed.", callback, event_name
+        )
         return True
 
-    # --- event_queue op ---
-    def eq_put(self, *events):
-        """put an event into event_queue, should not be blocked"""
-        for event in events:
-            if not isinstance(event, Event):
-                logger.warning(
-                    '#Dispatcher Put event failed: event must be instance of Event, %s', event)
-                continue
-            self._eventq.put(event)
-
-    def eq_get(self, timeout=None):
-        """Remove and return an event from the queue
-
-        May be blcoked if the event_queue is empty.
-        """
-        event = self._eventq.get(timeout=timeout)
-        if event:
-            self._eventq.task_done()
-        return event
-
-    def eq_get_nowait(self):
-        """Remove and return an event from the queue
-
-        return None if the event_queue is empty.
-        """
-        event = self._eventq.get_nowait()
-        if event:
-            self._eventq.task_done()
-        return event
-
-    def eq_size(self):
-        """count of event in the queue"""
-        return self._eventq.qsize()
-
-    def es_size(self):
-        """count of `EventSource` that registered"""
+    def get_es_count(self):
+        """count of EventSource"""
         return len(self._event_sources)
 
-    def cb_size(self, event):
-        """count of callbcaks of the event"""
-        return len(self._event_subscribes[event])
+    def get_active_es_count(self):
+        """count of active EventSource"""
+        return len(self._event_sources)
 
-    def start_event_sources(self):
-        """start the event sources"""
-        for event_source in self._event_sources:
+    def get_pending_events_count(self):
+        """count of pending Event"""
+        return self._eventq.qsize()
+
+    def get_subscriber_count(self, event_name):
+        """count of subscriber of an Event"""
+        return len(self._event_subscribes[event_name])
+
+    @staticmethod
+    def run_async_task(cor):
+        """schedule the coroutine to run"""
+        try:
+            return asyncio.create_task(cor)
+        except AttributeError:
+            return asyncio.ensure_future(cor)
+
+    # --- async funcs ---
+    async def setup(self):
+        """setup before dispatch"""
+        self.register_signals(asyncio.get_running_loop())
+        await self.put_event(Event(self.env, SysEvents.SYSTEM_STARTED))
+
+    async def cleanup(self):
+        """stop the dispatcher, do the cleanup stuffs"""
+        # system is exiting
+        quit_event = Event(self.env, SysEvents.SYSTEM_EXITING)
+        await self.call_subscribers(quit_event)
+        logger.info("#Dispatcher loop exit.")
+
+        # self.stop_event_sources()
+        try:  # Python <3.7 has no the method
+            for task in asyncio.all_tasks():
+                task.cancel()
+        except AttributeError:
+            for task in asyncio.Task.all_tasks():
+                task.cancel()
+
+        if self._thread_executor:
+            self._thread_executor.shutdown(wait=True)
+        if self._process_executor:
+            self._process_executor.shutdown(wait=True)
+
+        loop = asyncio.get_running_loop()
+        if loop:
+            loop.stop()
+
+    async def run_in_executor(self, func, run_mode="thread", *args, **kwargs):
+        """run synchronous func in the executor"""
+        executor = None
+        if run_mode == "process":
+            max_workers = self._max_process_workers
+            if not self._process_executor:
+                self._process_executor = ProcessPoolExecutor(max_workers=max_workers)
+            executor = self._process_executor
+        elif run_mode == "process":
+            max_workers = self._max_thread_workers
+            if not self._thread_executor:
+                self._thread_executor = ThreadPoolExecutor(max_workers=max_workers)
+            executor = self._thread_executor
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(executor, functools.partial(func, *args, **kwargs))
+
+    async def put_event(self, event):
+        """put an event into event_queue, may be blocked"""
+        if not isinstance(event, Event):
+            logger.warning(
+                "#Dispatcher Put Event<%s> failed: event must be instance of Event.", event
+            )
+            return False
+        return await self._eventq.put(event)
+
+    async def get_event(self):
+        """get next event from event_queue, my be blocked"""
+        return await self._eventq.get()
+
+    async def call_subscribers(self, event):
+        """call the subscribers of the event"""
+        if not self._event_subscribes[event.name]:
+            return
+        tasks = []
+        for call_func in self._event_subscribes[event.name]:
+            tasks.append(self.run_async_task(call_func(event)))
+
+        # await asyncio.gather(*tasks, return_exceptions=True)
+        for task in asyncio.as_completed(tasks):
             try:
-                logger.info('#Dispatcher starting event source %s...', event_source)
-                event_source.start()
+                await task
             except Exception as e:
-                logger.warning('#Dispatcher Start event source %s failed: %s', event_source.name, e)
+                logger.error("#Dispatcher callback for %s raise an exception: %s", event, e)
+        return True
 
-    def stop_event_sources(self):
-        """stop the event sources"""
-        for event_source in self._event_sources:
-            try:
-                logger.info('#Dispatcher stoping event source %s...', event_source)
-                event_source.stop()
-                logger.debug('#Dispatcher event source %s stopped', event_source)
-            except Exception as e:
-                logger.warning('#Dispatcher Stop event source %s failed: %s', event_source.name, e)
+    async def check_event_sources(self):
+        """check the status of EventSource and start new EventSources."""
+        self._check_cycle -= 1
+        if self._check_cycle > 0:
+            return
+        self._check_cycle = self._check_es_freq
+        for es_name in self._event_sources:
+            if es_name not in self._es_tasks:
+                logger.info("#Dispatcher Trying to start EventSource<%s>", es_name)
+                es = self._event_sources[es_name]
+                try:
+                    es.start()
+                except Exception as e:
+                    logger.error("#Dispatcher Start EventSource<%s> failed: %s", es_name, e)
+                else:
+                    self._es_tasks[es.name] = self.run_async_task(es.gen_events())
+                continue
 
-    def get_next_event(self):
-        """return next event to process"""
-        raise NotImplementedError
+            task = self._es_tasks[es_name]
+            if task.done():
+                logger.warning("#Dispatcher EventSource<%s> gen_events is done.", es_name)
+                try:
+                    task.result()
+                except Exception as e:
+                    logger.warning(
+                        "#Dispatcher EventSource<%s> is done by Exception<%s>, try to restart it.",
+                        es_name,
+                        str(e),
+                    )
+                    es = self._event_sources[es_name]
+                    self._es_tasks[es_name] = self.run_async_task(es.gen_events())
+        return True
 
-    def setup(self):
-        """setup before dispatch,
-        need to start all the event sources and can also do other setup things."""
-        self.start_event_sources()
-
-    def cleanup(self):
-        """cleanup the dispatcher,
-        stop all the evnent source and do other cleanup things.
-        """
-        self.stop_event_sources()
-
-    def dispatch(self):
+    async def loop(self):
         """dispatch the event loop to run."""
-        if not self._event_sources:
-            self._stop_flag = True
-            logger.warning('#Dispatcher No EventSource registered, system will exit directly.')
-            return None
-
-        # system initialized
-        self.eq_put(Event(self.env, SysEvents.SYSTEM_STARTED))
-
-        self.setup()
+        # system initialized first
+        await self.setup()
         last_event = None
         while True:
-            event = self.get_next_event()
+            await self.check_event_sources()
+            event = await self.get_event()
+            self._elasped_mark_time = time.time()
             if not event:
-                logger.info('#Dispatcher get_next_event return None, exit.')
+                logger.info("#Dispatcher get_event return None, exit.")
                 break
             if event.expire != 0 and self.now.timestamp() > event.timestamp + event.expire:
                 logger.warning(
-                    '#Dispatcher Event %s process too slow, currend time: %s, skipped event: %s.',
-                    last_event,
+                    "#Dispatcher event %s expired: %s, now: %s, previous event: %s.",
+                    event,
                     self.now,
-                    event)
-                self._event_process_timestamp = time.time()
+                    last_event,
+                )
+                self._event_dispatch_ts = self.now.timestamp()
                 continue
-            self._event_timestamp = event.timestamp
-            self._event_process_timestamp = time.time()
-            logger.debug('#Dispatcher Start process event: %s', event)
-            for call_func in self._event_subscribes[event.name]:
-                call_func(event)
-                if self._stop_flag:
-                    break
+            self._event_occur_ts = event.timestamp
+            self._event_dispatch_ts = self.now.timestamp()
+            logger.info(
+                "#Dispatcher Start process event: %s, occur at: %s dispatch at: %s",
+                event,
+                self._event_occur_ts,
+                self._event_dispatch_ts,
+            )
+            if self._wait_subscribers:
+                await self.call_subscribers(event)
+            else:
+                self.run_async_task(self.call_subscribers(event))
             last_event = event
             if self.now >= self._end_dt:
-                logger.info('#Dispatcher Run out of time, dispatch finish.')
+                logger.info("#Dispatcher Run out of time, dispatch finish.")
                 break
+        await self.cleanup()
 
-        # system is exiting
-        self.eq_put(Event(self.env, SysEvents.SYSTEM_EXITING))
-        logger.info('#Dispatcher loop exit.')
-        self._stop_flag = True
-        self.cleanup()
-
-    async def _wrap_coroutine(self, coroutine, *args, **kwargs):
-        """wrap coroutine, catch exceptions"""
-        # TODO: add retry and delay retry options
-        exc_retry_cnt = 1
-        while exc_retry_cnt > 0:
-            exc_retry_cnt -= 1
-            try:
-                await coroutine(*args, **kwargs)
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                logger.error('#Dispatcher coroutine: %s exception: %s', coroutine, e)
+    def run(self):
+        """main entrance"""
+        loop = asyncio.get_event_loop()
+        try:
+            loop.run_until_complete(self.loop())
+        except asyncio.CancelledError:
+            pass
 
 
-class BackTrackDispatcher(BaseDispatcher):
-    """BackTrackDispatcher
-
-    Simulately dispatch history events.
-    it generate events when calling `get_next_event` and the event queue is empty.
-
-    All the event generate, event dispatch,
-    event callbacks are run in one process and thread serialy.
-
-    :param start_dt: dispatch start time
-    :param end_dt: dispatch end time
-    :param time_step: time step for backtrack dispatch
-    :param trace_process_time: pass
+class BackTrackDispatcher(LiveTrackDispatcher):
     """
-    def __init__(self, *args, **kwargs):
-        eventq = PriorityQueue()
-        super().__init__(eventq=eventq, *args, **kwargs)
+    Dispatcher that dispatch backtrack events.
+    the event sources generate events and put them into event queue,
+    the main thread get events from event queue and dispatch them.
 
-        self._start_dt = kwargs.get('start_dt')
-        self._time_step = kwargs.get('time_step', 86400)
-        self._trace_process_time = kwargs.get('trace_process_time', False)
-
-        self._event_timestamp = self._start_dt.timestamp()
-        self._event_process_timestamp = time.time()
-        self._gen_dt = self.now
-
+    :param env: global envirument
+    """
     @property
     def now(self):
         """datetime of current logic time"""
         if not self._trace_process_time:
-            return datetime.fromtimestamp(self._event_timestamp)
+            return datetime.fromtimestamp(self._event_dispatch_ts)
 
-        elasped_time = time.time() - self._event_process_timestamp
-        return datetime.fromtimestamp(self._event_timestamp + elasped_time)
+        elasped_time = time.time() - self._elasped_mark_time
+        return datetime.fromtimestamp(self._event_dispatch_ts + elasped_time)
 
-    def gen_events(self):
-        """generate events from event sources."""
-        futures = []
-        limit_dt = datetime.fromtimestamp(self._gen_dt.timestamp() + self._time_step)
-        if limit_dt > self._end_dt:
-            limit_dt = self._end_dt
-        for event_source in self._event_sources:
-            # futures.append(event_source.gen_events(self._eventq, limit_dt))
-            futures.append(self._wrap_coroutine(event_source.gen_events, self._eventq, limit_dt))
+    async def get_event(self):
+        """return next event to process"""
+        while True:
+            if not self._eventq.empty() or self._gen_dt >= self._end_dt:
+                break
+            limit_dt = self._gen_dt + timedelta(seconds=self._time_step)
+            if limit_dt > self._end_dt:
+                limit_dt = self._end_dt
+            wait_tasks = []
+            for es_name, es in self._event_sources.items():
+                wait_tasks.append(es.gen_events(limit_dt))
+            await asyncio.gather(*wait_tasks, return_exceptions=True)
+            self._gen_dt = limit_dt
 
         try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError as e:
-            asyncio.set_event_loop(asyncio.new_event_loop())
-            loop = asyncio.get_event_loop()
-        # loop.run_until_complete(asyncio.gather(*futures))
-        loop.run_until_complete(asyncio.gather(*futures, return_exceptions=True))
-        logger.debug('#Dispatcher Forward backtrack time from %s to %s...', self._gen_dt, limit_dt)
-        self._gen_dt = limit_dt
-
-    def get_next_event(self):
-        """return next event to process"""
-        if self.eq_size() == 0:
-            self.gen_events()
-            if self.eq_size() == 0:
-                return None
-        return self.eq_get()
-
-
-class LiveDispatcher(BaseDispatcher):
-    """LiveDispatcher
-
-    Dispatch realtime events.
-    all the event sources are run in one dedicated thread in `coroutine` mode.
-    the event sources generate events and put them into event queue,
-    the main thread get events from event queue and dispath them.
-
-
-    :param stop_check_interval: stop check interval
-    """
-    def __init__(self, *args, **kwargs):
-        eventq = Queue()
-        # the thread should check exit after main thread call join, other will run in deadlock.
-        self._thread_event = None
-        self._thread_loop = None
-        self._event_source_thread = None
-        # never stop by runout time.
-        end_dt = datetime.strptime('9999-12-31', '%Y-%m-%d')
-        super().__init__(eventq=eventq, end_dt=end_dt, *args, **kwargs)
-
-    def quit_handler(self, signum, frame):
-        super().quit_handler(signum, frame)
-        if self._thread_event:
-            self._thread_loop.call_soon_threadsafe(self._thread_event.set)
-
-    async def stop_check(self):
-        """check if the dispatcher should stop, runs in the event source thread."""
-        await self._thread_event.wait()
-        try:    # Python <3.7 has no the method
-            for task in asyncio.all_tasks():
-                task.cancel()
-        except AttributeError as e:
-            pass
-        loop = asyncio.get_event_loop()
-        loop.stop()
-        loop.close()
-
-    def gen_events(self):
-        """generate events from event sources."""
-        asyncio.set_event_loop(asyncio.new_event_loop())
-        loop = asyncio.get_event_loop()
-        self._thread_loop = loop
-        self._thread_event = asyncio.Event()
-        self.start_event_sources()
-        while True:
-            if self._stop_flag:
-                break
-            tasks = [self.stop_check()]
-            for event_source in self._event_sources:
-                # tasks.append(event_source.gen_events(self._eventq))
-                tasks.append(self._wrap_coroutine(event_source.gen_events, self._eventq))
-            if not tasks:
-                logger.warning('#Dispatcher No event source tasks found, '
-                               'EventSourceManager thread exiting.')
-                break
-            try:
-                # loop.run_until_complete(asyncio.gather(*tasks))
-                loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-            except RuntimeError as e:
-                logger.error('#Dispatcher run exception: %s', e)
-        logger.debug('#Dispatcher gen event thread exit.')
-        return None
-
-    def get_next_event(self):
-        """get next event will in the queue to process
-
-        :return: next event to process
-        """
-        if self._stop_flag or not self._event_source_thread.is_alive():
+            return self._eventq.get_nowait()
+        except QueueEmpty:
             return None
-        while True:
-            try:
-                return self.eq_get(timeout=1)
-            except Empty:
-                if self._stop_flag or not self._event_source_thread.is_alive():
-                    return None
 
-    def setup(self):
-        """setup before dispatch, should start all event sources"""
-        self._event_source_thread = threading.Thread(
-            target=self.gen_events, name='EventSourceManager')
-        self._event_source_thread.start()
+    async def check_event_sources(self):
+        """generate events from event sources."""
+        pass
 
-    def cleanup(self):
-        """cleanup the dispatcher"""
-        super().cleanup()
-        if self._event_source_thread:
-            self._event_source_thread.join()
+
+def get_dispatcher(env):
+    if env.run_mode == "backtrack":
+        return BackTrackDispatcher(env)
+    return LiveTrackDispatcher(env)

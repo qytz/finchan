@@ -4,13 +4,23 @@
 
 "dispatcher.live_track":
     # live track: parameter for live dispatcher, will pass to LiveDispatcher
-    "stop_check_interval": 1
+    "wait_subscribers": false        # wait for subscriber's execute synchronously
+    "thread_workers": null           # number of workers for subscriber, no include the main loop
+    "process_workers": null          # number of workers for subscriber, no include the main loop
+    "equeue_size": 0                 # size of the event queue
+
+    "check_event_source_cycles": 2   # check event_source status frequency
 
 "dispatcher.backtrack":
     # backtrack: parameter for backtrack dispatcher, will pass to BackTrackDispatcher
+    "wait_subscribers": true         # wait for subscriber's execute synchronously
+    "thread_workers": null           # number of workers for subscriber, no include the main loop
+    "process_workers": null          # number of workers for subscriber, no include the main loop
+    "equeue_size": 0                 # size of the event queue
+
     # time step in seconds for backtest
-    "time_step": 86400    # one day
-    "start_dt": 2017-03-04 12:00:00
-    "end_dt": 2017-03-07 12:00:00
+    "time_step": 86400    # time forward step for backtrack when there's no event, in secounds
+    "start_dt": 2017-03-04 12:00:00  # backtrack start time
+    "end_dt": 2017-03-07 12:00:00    # backtrack end time
     # trace_process_time, if set to true, the event process time is added to now
     "trace_process_time": true

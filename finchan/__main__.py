@@ -28,7 +28,7 @@ import uvloop
 from .env import Env
 from .exts import ExtManager
 from .options import load_configs
-from .dispatcher import BackTrackDispatcher, LiveDispatcher
+from .dispatcher import get_dispatcher
 
 
 @click.command()
@@ -67,20 +67,16 @@ def main(verbose=0, config=None):
     except (SyntaxError, TypeError) as e:
         print("Parse configure file failed, please check: %s" % e)
         return
-
     work_dir = os.path.expanduser(env.options.get("work_dir", "~/.finchan"))
     os.makedirs(work_dir, exist_ok=True)
     os.makedirs(os.path.join(work_dir, "logs"), exist_ok=True)
     os.chdir(work_dir)
+
     log_config = env.options.get("log_config", {})
     # patch the log filter parameters
     if "filters" in log_config and "finchan" in log_config["filters"]:
         log_config["filters"]["finchan"]["env"] = env
     logging.config.dictConfig(log_config)
-    if env.options["run_mode"] == "backtrack":
-        env.run_mode = "backtrack"
-    else:
-        env.run_mode = "live_track"
 
     root_logger = logging.getLogger()
     handler = logging.StreamHandler()
@@ -92,25 +88,23 @@ def main(verbose=0, config=None):
     else:
         handler.setLevel("INFO")
     root_logger.addHandler(handler)
+    root_logger.info("Run in %s mode", env.options["run_mode"])
 
-    root_logger.info("Run in %s mode", env.run_mode)
-    if env.run_mode == "backtrack":
-        dispatcher_config = env.options.get("dispatcher.backtrack", {})
-        dispatcher = BackTrackDispatcher(env, **dispatcher_config)
-        enabled_exts = env.options.get("enabled_backtrack_exts", [])
+    if env.options["run_mode"] == "backtrack":
+        env.run_mode = "backtrack"
+        exts = env.options.get("enabled_backtrack_exts", [])
     else:
-        dispatcher_config = env.options.get("dispatcher.live_track", {})
-        dispatcher = LiveDispatcher(env, **dispatcher_config)
-        enabled_exts = env.options.get("enabled_live_exts", [])
-
+        env.run_mode = "live_track"
+        exts = env.options.get("enabled_live_exts", [])
+    dispatcher = get_dispatcher(env)
+    env.set_dispatcher(dispatcher)
     extm_args = env.options["ext_manager"]
     if not extm_args:
         extm_args = {}
     ext_manager = ExtManager(env, **extm_args)
-    env.set_dispatcher(dispatcher)
     env.set_ext_manager(ext_manager)
 
-    env.load_exts(enabled_exts)
+    env.load_exts(exts)
     env.run()
 
 

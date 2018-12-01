@@ -111,7 +111,7 @@ class Env(object):
         if not self._dispathcer:
             logger.warning("No dispatcher setted, cannot run.")
             return None
-        return self._dispathcer.dispatch()
+        return self._dispathcer.run()
 
     def load_exts(self, *exts):
         """load all the extensions in \*exts list"""
@@ -120,4 +120,4 @@ class Env(object):
         self._ext_manager.load_exts(*exts)
 
 
-# env = Env()
+# sys.modules[__name__] = Env()

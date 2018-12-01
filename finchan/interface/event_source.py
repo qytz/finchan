@@ -30,6 +30,7 @@ class AbsEventSource(abc.ABC):
     :param stop: stop the event source.
     :param gen_events: generate events and put them into event queue.
     """
+
     _name = None
 
     def __init__(self, *args, **kwargs):
@@ -42,18 +43,17 @@ class AbsEventSource(abc.ABC):
         return self._name
 
     @abc.abstractmethod
-    async def gen_events(self, event_queue, limit_dt=None):
+    async def gen_events(self, limit_dt=None):
         """Generate events for `Dispatcher`
 
-        put all the generated/received events to event queue by call `Dispatcher.eq_put` ,
-
-        event_queue: put all the generated event to the event_queue
-        limit_dt: for backtest, gen events before the limit_dt
+        put all the generated/received events to event queue by call `dispatcher.put_event`
 
         for live track, the event source run in parallel mode, and should not return.
 
         for backtrack, the event source run in serial mode,
         and must return after put all events before limit_dt to event queue.
+
+        :param limit_dt: for backtest, gen events which occur before the limit_dt
         """
         raise NotImplementedError
 

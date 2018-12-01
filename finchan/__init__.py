@@ -19,4 +19,4 @@ from . import __version__
 from .env import Env
 from .exts import ExtManager
 from .event import Event, SysEvents
-from .dispatcher import BackTrackDispatcher, LiveDispatcher
+from .dispatcher import LiveTrackDispatcher, BackTrackDispatcher, get_dispatcher

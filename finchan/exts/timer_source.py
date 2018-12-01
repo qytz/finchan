@@ -21,11 +21,11 @@ usage::
     def setup(env)
         scheduler = env.get_ext_obj('finchan.exts.timer_source')
         scheduler.run_every(3).to(5).minutes().do(timer_call)
-        scheduler.run_every(1).days.offset('09:31').tag('daily_task').do(timer_call)
+        scheduler.run_every(1).days.at('09:31').tag('daily_task').do(timer_call)
         # runs on every two weeks' friday 09:31
-        scheduler.run_every(2).weeks.offset('friday 09:31').tag('daily_task').do(timer_call)
+        scheduler.run_every(2).weeks.at('friday 09:31').tag('daily_task').do(timer_call)
         # runs on every month's 09 day 09:31
-        scheduler.run_every(1).months.offset('09 09:31').tag('daily_task').do(timer_call)
+        scheduler.run_every(1).months.at('09 09:31').tag('daily_task').do(timer_call)
 
 
     def clean(env)
@@ -54,10 +54,10 @@ required_exts = []
 logger = logging.getLogger(__name__)
 
 
-def event_callback(event):
+async def event_callback(event):
     """call timer func in event callback"""
     func = event.kwargs['func']
-    return func(event.env, *event.kwargs['args'], **event.kwargs['kwargs'])
+    return await func(event.env, *event.kwargs['args'], **event.kwargs['kwargs'])
 
 
 class JobMananger(object):
@@ -280,7 +280,7 @@ class Job(object):
         self.tags.update(tags)
         return self
 
-    def offset(self, offset_dt=None):
+    def at(self, offset_dt=None):
         """
         Schedule the job every step hours/days/weeks/months at a specific offset.
 
@@ -436,21 +436,12 @@ class LiveTimerSource(AbsEventSource):
         """Name of the event_source"""
         return self._name
 
-    async def gen_events(self, event_queue, limit_dt=None):
-        """Generate new events for `Dispatcher`
-
-        put all the generated/received or newly received events to
-        event queue by call `Dispatcher.eq_put` , should not be blocked.
-        only call by `Dispatcher` in **inner** mode, in **multithread** mode,
-        the event source should run in parallel mode, and put the event to event queue.
-
-        event_queue: put all the generated event to the event_queue
-        limit_dt: for backtest, gen events before the limit_dt
-        """
+    async def gen_events(self, limit_dt=None):
+        dispatcher = self.env.dispatcher
         while True:
             next_job = self.job_manager.get_next_job()
             if next_job and next_job.next_run <= self.env.now:
-                event_queue.put(next_job.gen_event())
+                await dispatcher.put_event(next_job.gen_event())
                 if next_job.unit == 'once':
                     self.job_manager.cancel(next_job)
             else:
@@ -485,22 +476,13 @@ class BackTimerSource(AbsEventSource):
         """Name of the event_source"""
         return self._name
 
-    async def gen_events(self, event_queue, limit_dt=None):
-        """Generate new events for `Dispatcher`
-
-        put all the generated/received or newly received events to
-        event queue by call `Dispatcher.eq_put` , should not be blocked.
-        only call by `Dispatcher` in **inner** mode, in **multithread** mode,
-        the event source should run in parallel mode, and put the event to event queue.
-
-        event_queue: put all the generated event to the event_queue
-        limit_dt: for backtest, gen events befor the limit_dt
-        """
+    async def gen_events(self, limit_dt=None):
+        dispatcher = self.env.dispatcher
         while True:
             next_job = self.job_manager.get_next_job()
-            if next_job and next_job.next_run > limit_dt:
+            if limit_dt and next_job and next_job.next_run > limit_dt:
                 break
-            event_queue.put(next_job.gen_event())
+            await dispatcher.put_event(next_job.gen_event())
             if next_job.unit == 'once':
                 self.job_manager.cancel(next_job)
 
