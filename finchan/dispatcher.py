@@ -293,6 +293,8 @@ class LiveTrackDispatcher(object):
         for task in asyncio.as_completed(tasks):
             try:
                 await task
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 logger.error("#Dispatcher callback for %s raise an exception: %s", event, e)
         return True
