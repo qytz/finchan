@@ -14,22 +14,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Timer event source, interface inspired by `schedule <https://github.com/dbader/schedule>`_
+"""Scheduler event source, interface inspired by `schedule <https://github.com/dbader/schedule>`_
 
 usage::
 
     def setup(env)
-        scheduler = env.get_ext_obj('finchan.exts.timer_source')
-        scheduler.run_every(3).to(5).minutes().do(timer_call)
-        scheduler.run_every(1).days.at('09:31').tag('daily_task').do(timer_call)
-        # runs on every two weeks' friday 09:31
-        scheduler.run_every(2).weeks.at('friday 09:31').tag('daily_task').do(timer_call)
-        # runs on every month's 09 day 09:31
-        scheduler.run_every(1).months.at('09 09:31').tag('daily_task').do(timer_call)
+        scheduler = env.scheduler
+        # run once @10:00
+        scheduler.at("10:00").do(timer_call)
+        # run everyday @09:31
+        scheduler.every(1).days.at('09:31').tag('daily_task').do(timer_call)
+        # runs on every two weeks' friday @09:31
+        scheduler.every(2).weeks.at('friday 09:31').tag('daily_task').do(timer_call)
+        # runs on every month's day 09 @09:31
+        scheduler.every(1).months.at('09 09:31').tag('daily_task').do(timer_call)
 
 
     def clean(env)
-        scheduler = env.get_ext_obj('finchan.exts.timer_source')
+        scheduler = env.scheduler
         scheduler.cancel_all_jobs()
 
 """
@@ -47,7 +49,7 @@ from finchan.interface.event_source import AbsEventSource
 
 
 # name of the extension
-ext_name = 'finchan.exts.timer_source'
+ext_name = "finchan.exts.scheduler"
 # required extension
 required_exts = []
 
@@ -55,9 +57,9 @@ logger = logging.getLogger(__name__)
 
 
 async def event_callback(event):
-    """call timer func in event callback"""
-    func = event.kwargs['func']
-    return await func(event.env, *event.kwargs['args'], **event.kwargs['kwargs'])
+    """call scheduler func in event callback"""
+    func = event.kwargs["func"]
+    return await func(event.env, *event.kwargs["args"], **event.kwargs["kwargs"])
 
 
 class JobMananger(object):
@@ -68,21 +70,22 @@ class JobMananger(object):
 
     TODO: schedule with asyncio.sleep(idle_seconds) and loop.create_task and task.cancel.
     """
+
     def __init__(self, env):
         self.env = env
         self.jobs = []
         self.curr_job = None
 
-    def run_once(self, dt):
+    def at(self, dt):
         """Schedule a new job that only runs once time.
 
         :param dt: the `datetime <datetime.datetime>` object that the job will run.
         :return: An unconfigured :class:`Job <Job>`
         """
-        job = Job(step='once', next_run=dt, job_manager=self, unit='once')
-        return job
+        job = Job(step=0, job_manager=self, unit="once")
+        return job.at(offset_dt=dt)
 
-    def run_every(self, step=1):
+    def every(self, step=1):
         """
         Schedule a new periodic job.
 
@@ -145,8 +148,6 @@ class Job(object):
                       this job will register itself with once it has
                       been fully configured in :meth:`Job.do()`.
     :param unit: perioid unit, specified below.
-    :param next_run: the `datetime <datetime.datetime>` that
-                     the job will run, valid for `once` unit.
     :param job_id: the ID of the job object, can be None, system will generate one for you.
 
     Every job runs at a given fixed time interval that is defined by:
@@ -154,8 +155,8 @@ class Job(object):
     * a :meth:`time unit second <Job.seconds>` or :meth:`time unit minite <Job.minutes>` etc.
     * a quantity of `time units` defined by `step`
 
-    A job is usually created and returned by :meth:`JobMananger.run_every` method,
-    which also defines its `interval` step, or by :meth:`JobMananger.run_once` method,
+    A job is usually created and returned by :meth:`JobMananger.every` method,
+    which also defines its `interval` step, or by :meth:`JobMananger.at` method,
     which specified its run time.
 
     unit types:
@@ -169,13 +170,14 @@ class Job(object):
         * months
         * years
     """
-    id_gen = get_id_gen(prefix='Job')
-    unit_types = ['once', 'seconds', 'minutes', 'hours', 'days', 'weeks', 'months', 'years']
 
-    def __init__(self, step, job_manager, unit=None, next_run=None, job_id=None):
+    id_gen = get_id_gen(prefix="Job")
+    unit_types = ["once", "seconds", "minutes", "hours", "days", "weeks", "months", "years"]
+
+    def __init__(self, step, job_manager, unit=None, job_id=None):
         self.job_id = job_id
         self.unit = unit
-        self.next_run = next_run
+        self.next_run = None
         self.job_manager = job_manager
         self.env = job_manager.env
         self.min_step = self.max_step = step
@@ -185,12 +187,12 @@ class Job(object):
         self.event_kwargs = None
         self.tags = set()
 
-        self.offset_dt = parse_dt('1970-01-01 00:00:00')
+        self.offset_dt = parse_dt("1970-01-01 00:00:00")
 
         if not self.job_id:
             self.job_id = next(Job.id_gen)
 
-        self.event_name = 'TimerSource.%s' % (self.job_id)
+        self.event_name = "Scheduler.%s" % (self.job_id)
         self.event_kwargs = {}
 
     def to(self, step):
@@ -198,7 +200,7 @@ class Job(object):
         Schedule the job to run at an irregular (randomized) step.
 
         The job's interval will randomly vary from the value given
-        to  `run_every <JobMananger.run_every>` to `step`.
+        to  `every <JobMananger.every>` to `step`.
         The range defined is inclusive on both ends.
         For example, `every(A).to(B).seconds` executes
         the job function every N seconds such that A <= N <= B.
@@ -215,7 +217,7 @@ class Job(object):
 
         :return: The job instance
         """
-        self.unit = 'seconds'
+        self.unit = "seconds"
         return self
 
     def minutes(self):
@@ -223,7 +225,7 @@ class Job(object):
 
         :return: The job instance
         """
-        self.unit = 'minutes'
+        self.unit = "minutes"
         return self
 
     def hours(self):
@@ -231,7 +233,7 @@ class Job(object):
 
         :return: The job instance
         """
-        self.unit = 'hours'
+        self.unit = "hours"
         return self
 
     def days(self):
@@ -239,7 +241,7 @@ class Job(object):
 
         :return: The job instance
         """
-        self.unit = 'days'
+        self.unit = "days"
         return self
 
     def weeks(self):
@@ -247,7 +249,7 @@ class Job(object):
 
         :return: The job instance
         """
-        self.unit = 'weeks'
+        self.unit = "weeks"
         return self
 
     def months(self):
@@ -255,7 +257,7 @@ class Job(object):
 
         :return: The job instance
         """
-        self.unit = 'months'
+        self.unit = "months"
         return self
 
     def years(self):
@@ -263,7 +265,7 @@ class Job(object):
 
         :return: The job instance
         """
-        self.unit = 'years'
+        self.unit = "years"
         return self
 
     def tag(self, *tags):
@@ -276,7 +278,7 @@ class Job(object):
         :return: The invoked job instance
         """
         if not all(isinstance(tag, collections.Hashable) for tag in tags):
-            raise TypeError('Tags must be hashable')
+            raise TypeError("Tags must be hashable")
         self.tags.update(tags)
         return self
 
@@ -297,20 +299,18 @@ class Job(object):
 
         :return: The invoked job instance
         """
-        if self.unit == 'once':
-            logger.warning('#Scheduler No offset should be set for timer runs only once.')
-            return self
-
         if not offset_dt:
-            logger.warning('#Scheduler Call offset but no offset_dt specified.')
+            logger.warning("#Scheduler Call offset but no offset_dt specified.")
             return self
 
         try:
             self.offset_dt = parse_dt(offset_dt)
         except (ValueError, TypeError):
-            logger.warning('#Scheduler offset for time in invalid: %s, set to default: %s',
-                           offset_dt,
-                           self.offset_dt)
+            logger.warning(
+                "#Scheduler offset for time in invalid: %s, set to default: %s",
+                offset_dt,
+                self.offset_dt,
+            )
         return self
 
     def do(self, func, *args, **kwargs):
@@ -319,40 +319,38 @@ class Job(object):
 
         Any additional arguments are passed on to func when the job runs.
 
-        Actually, the the func is wrapped in an event callback function,
-        when it's time to call the function, the `TimerSource` just generate the event,
-        the function will be executed the the `Dispatcher.dispatch` dispatch the event.
+        Actually, the func is wrapped in an event callback function,
+        when it's time to call the function, the `Scheduler` just generate the event,
+        the function will be executed when the `Dispatcher` dispatch the event.
 
         :param func: The function to be scheduled
         :return: The invoked job instance
         """
         assert self.unit in Job.unit_types
-        self.event_kwargs.update({
-            'func': func,
-            'args': args,
-            'kwargs': kwargs
-            })
+        self.event_kwargs.update({"func": func, "args": args, "kwargs": kwargs})
 
         self._schedule_first_run()
-        logger.debug('#Scheduler Job do last_run: %s next_run: %s', self.last_run, self.next_run)
+        logger.debug("#Scheduler Job do last_run: %s next_run: %s", self.last_run, self.next_run)
         self.job_manager.add_job(self)
-        logger.info('#Scheduler New timer Job added: %s', self)
+        logger.info("#Scheduler New Job added: %s", self)
         self.job_manager.env.dispatcher.subscribe(self.event_name, event_callback)
         return self
 
     def gen_event(self):
-        """Generate the event and schedule the next time of the timer event occurs."""
+        """Generate the event and schedule the next time of the event occurs."""
         event = Event(self.env, self.event_name, dt=self.next_run, **self.event_kwargs)
-        if self.unit == 'once':
+        if self.unit == "once":
             self.job_manager.cancel(self)
         else:
             self.last_run = self.next_run
             self._schedule_next_run()
 
-        logger.debug('#Scheduler generate new timer event %s, job last run: %s next run: %s',
-                     event,
-                     self.last_run,
-                     self.next_run)
+        logger.debug(
+            "#Scheduler generate new event %s, job last run: %s next run: %s",
+            event,
+            self.last_run,
+            self.next_run,
+        )
 
         return event
 
@@ -365,6 +363,10 @@ class Job(object):
 
     def _schedule_first_run(self):
         """Compute the instant when this job should run the first time."""
+        if self.unit == "once":
+            self.next_run = self.offset_dt
+            return
+
         if self.max_step is not None:
             step = random.randint(self.min_step, self.max_step)
         else:
@@ -374,35 +376,33 @@ class Job(object):
         offset_dict = {}
         env = self.job_manager.env
         if self.offset_dt.year < env.now.year:
-            replay_dict['year'] = env.now.year
+            replay_dict["year"] = env.now.year
 
-        if self.unit == 'once':
-            return
-        if self.unit == 'weeks':
-            offset_dict['days'] = step * 7
+        if self.unit == "weeks":
+            offset_dict["days"] = step * 7
         else:
             offset_dict[self.unit] = step
 
-        if self.unit == 'minutes':
-            replay_dict['second'] = self.offset_dt.second
-        if self.unit == 'hours':
-            replay_dict['minute'] = self.offset_dt.minute
-            replay_dict['second'] = self.offset_dt.second
-        if self.unit == 'days':
-            replay_dict['hour'] = self.offset_dt.hour
-            replay_dict['minute'] = self.offset_dt.minute
-            replay_dict['second'] = self.offset_dt.second
-        if self.unit == 'months':
-            replay_dict['day'] = self.offset_dt.day
-            replay_dict['hour'] = self.offset_dt.hour
-            replay_dict['minute'] = self.offset_dt.minute
-            replay_dict['second'] = self.offset_dt.second
-        if self.unit == 'years':
-            replay_dict['month'] = self.offset_dt.month
-            replay_dict['day'] = self.offset_dt.day
-            replay_dict['hour'] = self.offset_dt.hour
-            replay_dict['minute'] = self.offset_dt.minute
-            replay_dict['second'] = self.offset_dt.second
+        if self.unit == "minutes":
+            replay_dict["second"] = self.offset_dt.second
+        if self.unit == "hours":
+            replay_dict["minute"] = self.offset_dt.minute
+            replay_dict["second"] = self.offset_dt.second
+        if self.unit == "days":
+            replay_dict["hour"] = self.offset_dt.hour
+            replay_dict["minute"] = self.offset_dt.minute
+            replay_dict["second"] = self.offset_dt.second
+        if self.unit == "months":
+            replay_dict["day"] = self.offset_dt.day
+            replay_dict["hour"] = self.offset_dt.hour
+            replay_dict["minute"] = self.offset_dt.minute
+            replay_dict["second"] = self.offset_dt.second
+        if self.unit == "years":
+            replay_dict["month"] = self.offset_dt.month
+            replay_dict["day"] = self.offset_dt.day
+            replay_dict["hour"] = self.offset_dt.hour
+            replay_dict["minute"] = self.offset_dt.minute
+            replay_dict["second"] = self.offset_dt.second
 
         bench_dt = env.now.replace(**replay_dict)
         self.next_run = bench_dt + timedelta(**offset_dict)
@@ -412,7 +412,7 @@ class Job(object):
 
     def _schedule_next_run(self):
         """Compute the instant when this job should run next."""
-        if self.unit == 'once':
+        if self.unit == "once":
             return True
 
         if self.max_step is not None:
@@ -422,9 +422,10 @@ class Job(object):
         self.next_run = self.last_run + timedelta(**{self.unit: step})
 
 
-class LiveTimerSource(AbsEventSource):
-    """Live TimerEventSource, used for ``live`` mode"""
-    _name = "LiveTimerEventSource"
+class LiveScheduler(AbsEventSource, JobMananger):
+    """Live SchedulerEventSource, used for ``live`` mode"""
+
+    _name = "LiveScheduleEventSource"
 
     def __init__(self, env, *args, **kwargs):
         """init the event source"""
@@ -443,7 +444,7 @@ class LiveTimerSource(AbsEventSource):
             next_job = self.job_manager.get_next_job()
             if next_job and next_job.next_run <= self.env.now:
                 await dispatcher.put_event(next_job.gen_event())
-                if next_job.unit == 'once':
+                if next_job.unit == "once":
                     self.job_manager.cancel(next_job)
             else:
                 # logger.debug('#Scheduler no job yet, sleep 1s.')
@@ -458,14 +459,15 @@ class LiveTimerSource(AbsEventSource):
 
     def stop(self):
         """stop the event_source, stop generate/receive events"""
-        logger.info('#Scheduler timer source stopping, will clear all jobs.')
+        logger.info("#Scheduler stopping, will clear all jobs.")
         self.job_manager.cancel_all_jobs()
-        logger.debug('#Scheduler timer source stoped.')
+        logger.debug("#Scheduler stoped.")
 
 
-class BackTimerSource(AbsEventSource):
-    """Backtrack TimerEventSource, used for ``backtrack`` mode"""
-    _name = "BackTrackTimerEventSource"
+class BackTrackScheduler(AbsEventSource, JobMananger):
+    """BackTrack ScheduleEventSource, used for ``backtrack`` mode"""
+
+    _name = "BackTrackScheduleEventSource"
 
     def __init__(self, env, *args, **kwargs):
         """init the event source"""
@@ -484,7 +486,7 @@ class BackTimerSource(AbsEventSource):
             if limit_dt and next_job and next_job.next_run > limit_dt:
                 break
             await dispatcher.put_event(next_job.gen_event())
-            if next_job.unit == 'once':
+            if next_job.unit == "once":
                 self.job_manager.cancel(next_job)
 
     def start(self):
@@ -500,21 +502,21 @@ class BackTimerSource(AbsEventSource):
 
 
 def load_finchan_ext(env, *args, **kwargs):
-    if env.run_mode == 'backtrack':
-        timer_source = BackTimerSource(env)
+    if env.run_mode == "backtrack":
+        scheduler = BackTrackScheduler(env)
     else:
-        timer_source = LiveTimerSource(env)
-    env.set_ext_obj(ext_name, timer_source.job_manager)
-    env.dispatcher.register_event_source(timer_source)
+        scheduler = LiveScheduler(env)
+    env.ext_space.scheduler = scheduler.job_manager
+    env.dispatcher.register_event_source(scheduler)
 
 
 def unload_finchan_ext(env):
-    timer = env.timer
-    env.timer = None
-    timer.cancel_all_jobs()
-    env.dispatcher.deregister_event_source(timer)
+    if env.ext_space.scheduler:
+        env.ext_space.scheduler.cancel_all_jobs()
+        env.dispatcher.deregister_event_source(env.ext_space.scheduler)
+        env.ext_space.scheduler = None
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # tests
     pass

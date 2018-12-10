@@ -30,6 +30,17 @@ from dateutil.parser import parse as parse_dt
 logger = logging.getLogger(__name__)
 
 
+class ExtSpace(dict):
+    def __init__(self):
+        super().__init__()
+
+    def __getattr__(self, key):
+        return self.get(key, None)
+
+    def __setattr__(self, key, val):
+        self[key] = val
+
+
 class Env(object):
     """Global environment"""
 
@@ -38,7 +49,7 @@ class Env(object):
         self.options = None
         self._dispathcer = None
         self._ext_manager = None
-        self._ext_objs = {}
+        self._ext_space = ExtSpace()
 
     @property
     def now(self):
@@ -60,6 +71,10 @@ class Env(object):
         """the extension manager object"""
         return self._ext_manager
 
+    @property
+    def ext_space(self):
+        return self._ext_space
+
     def set_dispatcher(self, dispatcher):
         """set dispatcher object"""
         # from .dispatcher import Dispatcher
@@ -77,22 +92,6 @@ class Env(object):
         #     return False
         self._ext_manager = ext_manager
         return True
-
-    def set_ext_obj(self, ext, obj):
-        """set object for ext
-
-        :param ext: name of the extension.
-        :param obj: the object that call be access globaly by all.
-        """
-        self._ext_objs[ext] = obj
-
-    def get_ext_obj(self, ext):
-        """get object for ext that setted.
-
-        :param ext: name of the extension.
-        :return: the obj that the extension setted.
-        """
-        return self._ext_objs.get(ext, None)
 
     def get_ext_options(self, ext):
         """get options for extension named `ext` in configure file"""

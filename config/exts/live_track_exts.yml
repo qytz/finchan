@@ -7,9 +7,9 @@
 
 # configure extensions configures for backtrack
 "live_track_exts":
-    "finchan.exts.timer_source":
+    "finchan.exts.scheduler":
         # time event frequency, unit is second
         "frequency": 1
-    "finchan.exts.timer_callback":
+    "finchan.exts.period_call":
         # process time in second
         "process_time": 1
