@@ -59,7 +59,11 @@ def main(verbose=0, config=None):
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     env.verbose = verbose
     if not config:
-        conf_path = os.path.expanduser("~/.finchan/config.yml")
+        # first find the configs in current directory
+        conf_path = ".finchan_configs"
+        if not os.path.exists(conf_path):
+            # the use the final default one
+            conf_path = os.path.expanduser("~/.finchan/configs")
     else:
         conf_path = config
     try:

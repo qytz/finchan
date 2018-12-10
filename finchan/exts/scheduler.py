@@ -299,11 +299,11 @@ class Job(object):
         """
         if self.unit == 'once':
             logger.warning('#Scheduler No offset should be set for timer runs only once.')
-            return
+            return self
 
         if not offset_dt:
             logger.warning('#Scheduler Call offset but no offset_dt specified.')
-            return
+            return self
 
         try:
             self.offset_dt = parse_dt(offset_dt)
@@ -311,6 +311,7 @@ class Job(object):
             logger.warning('#Scheduler offset for time in invalid: %s, set to default: %s',
                            offset_dt,
                            self.offset_dt)
+        return self
 
     def do(self, func, *args, **kwargs):
         """
