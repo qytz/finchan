@@ -15,11 +15,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-import sys
-import json
 import asyncio
 import logging
-import datetime
 import logging.config
 
 import click
@@ -56,7 +53,7 @@ def main(verbose=0, config=None):
     Project url: https://github.com/qytz/finchan
     """
     env = Env()
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    # asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     env.verbose = verbose
     if not config:
         # first find the configs in current directory
@@ -75,6 +72,7 @@ def main(verbose=0, config=None):
     os.makedirs(work_dir, exist_ok=True)
     os.makedirs(os.path.join(work_dir, "logs"), exist_ok=True)
     os.chdir(work_dir)
+    env.set_work_dir(work_dir)
 
     log_config = env.options.get("log_config", {})
     # patch the log filter parameters
@@ -109,7 +107,7 @@ def main(verbose=0, config=None):
     env.set_ext_manager(ext_manager)
 
     env.load_exts(exts)
-    env.run()
+    return env.run()
 
 
 if __name__ == "__main__":

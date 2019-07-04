@@ -17,20 +17,23 @@
 """
 runtime Environment
 
-**this module MUSTNOT depend on any submodules of finchan, just avoid import loop.**
-
 the `env` object is a global singleton object,
 other modules/extensions can access by just import it and can access/set attributes to `env` .
 """
+import asyncio
 import logging
 from datetime import datetime
-from dateutil.parser import parse as parse_dt
+from pathlib import Path
+from typing import Dict, Union
 
+from .dispatcher import Dispatcher
+from .exts import ExtManager
+from .utils import SingletonMeta
 
 logger = logging.getLogger(__name__)
 
 
-class ExtSpace(dict):
+class ExtNameSpace(dict):
     def __init__(self):
         super().__init__()
 
@@ -41,18 +44,19 @@ class ExtSpace(dict):
         self[key] = val
 
 
-class Env(object):
+class Env(metaclass=SingletonMeta):
     """Global environment"""
 
-    def __init__(self):
-        self.run_mode = None
+    def __init__(self, *args, **kwargs):
+        self.run_mode: str = None
         self.options = None
         self._dispathcer = None
         self._ext_manager = None
-        self._ext_space = ExtSpace()
+        self._work_dir = Path("~")
+        self._ext_ns = ExtNameSpace()
 
     @property
-    def now(self):
+    def now(self) -> datetime:
         """current datetime, wraps for dispatcher.now
 
         log is not permitted
@@ -62,20 +66,27 @@ class Env(object):
         return self._dispathcer.now
 
     @property
-    def dispatcher(self):
+    def dispatcher(self) -> Dispatcher:
         """the dispatcher manager object"""
         return self._dispathcer
 
     @property
-    def ext_manager(self):
+    def ext_manager(self) -> ExtManager:
         """the extension manager object"""
         return self._ext_manager
 
     @property
-    def ext_space(self):
-        return self._ext_space
+    def ext_ns(self) -> ExtNameSpace:
+        return self._ext_ns
 
-    def set_dispatcher(self, dispatcher):
+    @property
+    def work_dir(self) -> Path:
+        return self._work_dir
+
+    def set_work_dir(self, work_dir: Union[Path, str]) -> None:
+        self._work_dir = Path(work_dir)
+
+    def set_dispatcher(self, dispatcher: Dispatcher) -> bool:
         """set dispatcher object"""
         # from .dispatcher import Dispatcher
         # if not isinstance(dispatcher, Dispatcher):
@@ -84,7 +95,7 @@ class Env(object):
         self._dispathcer = dispatcher
         return True
 
-    def set_ext_manager(self, ext_manager):
+    def set_ext_manager(self, ext_manager: ExtManager) -> bool:
         """set extension manager object"""
         # from .exts import ExtManager
         # if not isinstance(ext_manager, ExtManager):
@@ -93,26 +104,24 @@ class Env(object):
         self._ext_manager = ext_manager
         return True
 
-    def get_ext_options(self, ext):
+    def get_ext_options(self, ext_name: str) -> Dict:
         """get options for extension named `ext` in configure file"""
-        if not self.options:
+        if not self.options or not self.options.get("exts", None):
             return {}
-        if self.run_mode == "backtrack":
-            ext_dict = self.options.get("backtrack_exts", None)
-        else:
-            ext_dict = self.options.get("live_track_exts", None)
-        if not ext_dict:
-            return {}
-        return ext_dict.get(ext, {})
+        return self.options["exts"].get(ext_name, {})
 
     def run(self):
         """wraps dispatcher's run"""
         if not self._dispathcer:
             logger.warning("No dispatcher setted, cannot run.")
             return None
-        return self._dispathcer.run()
+        try:
+            return asyncio.run(self._dispathcer.run())
+        except AttributeError:
+            loop = asyncio.get_event_loop()
+            return loop.run_until_complete(self._dispathcer.run())
 
-    def load_exts(self, *exts):
+    def load_exts(self, *exts: str) -> None:
         """load all the extensions in \*exts list"""
         if not self._ext_manager:
             logger.warning("call load_exts without setting ext_manager, no exts loaded")

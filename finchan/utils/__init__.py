@@ -15,13 +15,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import time
+from typing import Dict
+
+from .scheduler import TimeScheduler
 
 
-def get_id_gen(start=int(time.time()), prefix=''):
+def get_id_gen(start=int(time.time()), prefix=""):
     """return a generator for str id,
 
     just increase 1 every time with a optional prefix."""
     i = start
     while True:
-        yield '{}-{}'.format(prefix, i)
+        if prefix:
+            yield "{}-{}".format(prefix, i)
+        else:
+            yield str(i)
         i += 1
+
+
+class SingletonMeta(type):
+    _instances: Dict = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(SingletonMeta, cls).__call__(*args, **kwargs)
+        return cls._instances[cls]

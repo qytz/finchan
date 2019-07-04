@@ -4,7 +4,6 @@
 
 "version": 1
 # "run_mode": support live/backtrack
-# "run_mode": "backtrack"
 "run_mode": "live"
 
 "work_dir": "~/.finchan"
@@ -12,4 +11,5 @@
 # parameters for backtrack ext_manage, will pass to ExtManager
 "ext_manager":
     # extensions' path
-    "ext_path": "~/"
+    "ext_path":
+        - "~/"

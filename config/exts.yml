@@ -1,12 +1,15 @@
 %YAML 1.2
 ---
-# live track exts' configs
+# enabled backtrack exts
+"enabled_backtrack_exts":
+    - "backtrack_test"
 
+# enabled live track exts
 "enabled_live_exts":
     - "live_test"
 
 # configure extensions configures for backtrack
-"live_track_exts":
+"exts":
     "finchan.exts.scheduler":
         # time event frequency, unit is second
         "frequency": 1

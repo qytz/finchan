@@ -15,48 +15,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """time event source"""
-import time
-import asyncio
 import logging
 
-from finchan.event import SysEvents
-
 # name of the extension
-ext_name = 'finchan.exts.period_call'
+ext_name = "finchan.exts.period_call"
 # required extension
 required_exts = ["finchan.exts.scheduler"]
 
 logger = logging.getLogger(__name__)
 
 
-async def timer_call(env):
-    ct = time.time()
-    logger.info('timer callback<%s>', ct)
-    await env.dispatcher.run_in_executor(time.sleep, "process", 3)
-    logger.info('timer callback<%s> finish', ct)
+async def run(env):
+    async for dt in env.ext_ns.scheduler(env).every(3).to(8).seconds():
+        logger.info("# period_call running periodly @%s", dt)
+
+async def setup(env):
+    env.dispatcher.schedule_task(run(env))
 
 
-async def add_timer(event):
-    scheduler = event.env.ext_space.scheduler
-    if not scheduler:
-        raise ReferenceError('Scheduler is not found.')
+async def cleanup(env):
+    pass
 
-    if event.env.run_mode == 'live_track':
-        scheduler.every(3).to(5).seconds().do(timer_call)
-    else:
-        scheduler.every(3).to(15).minutes().do(timer_call)
-    logger.info('#TimerCall timer job added')
+def load_finchan_ext(env):
+    pass
 
 
-def load_finchan_ext(env, *args, **kwargs):
-    env.dispatcher.subscribe(SysEvents.SYSTEM_STARTED, add_timer)
-
-def unload_finchan_ext(env):
-    scheduler = env.ext_space.scheduler
-    if scheduler:
-        scheduler.cancel()
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     # tests
     pass

@@ -15,7 +15,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Event implentation"""
-from enum import Enum
 from datetime import datetime
 
 from .utils import get_id_gen
@@ -32,7 +31,8 @@ class Event(object):
 
     can compare less/greater than with other event object by time, equal by event id.
     """
-    id_gen = get_id_gen(prefix='Event')
+
+    id_gen = get_id_gen(prefix="Event")
 
     def __init__(self, env, name, dt=None, expire=0, event_id=None, **kwargs):
         self.env = env
@@ -93,10 +93,12 @@ class Event(object):
         return False
 
     def __repr__(self):
-        return "<Event.%s:id=%s, time=%s, kwargs=%s>" % (self.name,
-                                                         self.id,
-                                                         datetime.fromtimestamp(self.timestamp),
-                                                         self.kwargs)
+        return "<Event.%s:id=%s, time=%s, kwargs=%s>" % (
+            self.name,
+            self.id,
+            datetime.fromtimestamp(self.timestamp),
+            self.kwargs,
+        )
 
 
 class SysEvents(object):
@@ -107,5 +109,6 @@ class SysEvents(object):
         * SYSTEM_STARTED = 'system_event.system_started'
         * SYSTEM_EXITING = 'system_event.system_will_exit'
     """
-    SYSTEM_STARTED = 'system_event.system_started'
-    SYSTEM_EXITING = 'system_event.system_will_exit'
+
+    SYSTEM_STARTED = "system_event.system_started"
+    SYSTEM_EXITING = "system_event.system_will_exit"
