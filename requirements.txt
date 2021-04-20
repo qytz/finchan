@@ -1,8 +1,6 @@
-click==6.7
+-i https://pypi.org/simple/
+click==7.0
 python-dateutil==2.7.3
-ruamel.yaml==0.15.61
-six==1.11.0
+ruamel.yaml==0.15.71
+six==1.15.0
 uvloop==0.11.2
-
-# for dev
-sphinx_autodoc_typehints
